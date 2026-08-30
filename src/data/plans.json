@@ -1,0 +1,97 @@
+{
+  "Hemiplegia": {
+    "diet": "Focus on anti-inflammatory foods. Ensure adequate protein intake for muscle maintenance on the unaffected side.",
+    "exercises": [
+      {
+        "id": "hemi_1",
+        "name": "Seated Marching",
+        "description": "Lift your unaffected knee as high as comfortable, lower slowly. Repeat.",
+        "reps": "10 reps x 3 sets",
+        "gifUrl": "https://placehold.co/400x300/png?text=Seated+Marching"
+      },
+      {
+        "id": "hemi_2",
+        "name": "Shoulder Shrugs",
+        "description": "Shrug shoulders up towards ears, hold for 2 seconds, and release.",
+        "reps": "15 reps x 2 sets",
+        "gifUrl": "https://media.giphy.com/media/26FPxSLFWTIbmqrEQ/giphy.gif"
+      }
+    ]
+  },
+  "Paraplegia": {
+    "diet": "Maintain a balanced diet to manage weight, focusing on high fiber to support digestion.",
+    "exercises": [
+      {
+        "id": "para_1",
+        "name": "Seated Push-ups",
+        "description": "Place hands on armrests, push body up lifting hips off the seat, slowly lower.",
+        "reps": "8 reps x 3 sets",
+        "gifUrl": "http://d205bpvrqc9yn1.cloudfront.net/3124.gif"
+      },
+      {
+        "id": "para_2",
+        "name": "Arm Circles",
+        "description": "Extend arms to the side, make small forward circles, then reverse.",
+        "reps": "30 seconds each direction",
+        "gifUrl": "https://makeagif.com/gif/arm-circles-d89ib3.gif"
+      }
+    ]
+  },
+  "Quadriplegia/Tetraplegia": {
+    "diet": "Hydration is crucial. Choose easy-to-digest foods and manage portion sizes.",
+    "exercises": [
+      {
+        "id": "quad_1",
+        "name": "Neck Stretches",
+        "description": "Gently tilt your head left, right, forward, and back.",
+        "reps": "Hold 10 secs each way",
+        "gifUrl": "https://placehold.co/400x300/png?text=Neck+Stretches"
+      },
+      {
+        "id": "quad_2",
+        "name": "Assisted Range of Motion",
+        "description": "With a caregiver, move limbs through their full comfortable range.",
+        "reps": "10 minutes daily",
+        "gifUrl": "https://placehold.co/400x300/png?text=Assisted+ROM"
+      }
+    ]
+  },
+  "Monoplegia": {
+    "diet": "Standard balanced diet focusing on whole foods and hydration.",
+    "exercises": [
+      {
+        "id": "mono_1",
+        "name": "Resistance Band Pulls",
+        "description": "Using your unaffected limb, pull a resistance band across your chest.",
+        "reps": "12 reps x 3 sets",
+        "gifUrl": "http://d205bpvrqc9yn1.cloudfront.net/3144.gif"
+      },
+      {
+        "id": "mono_2",
+        "name": "Core Twists",
+        "description": "Sit tall and gently twist your torso left and right.",
+        "reps": "15 reps each side",
+        "gifUrl": "https://placehold.co/400x300/png?text=Core+Twists"
+      }
+    ]
+  },
+  "Diplegia": {
+    "diet": "Ensure sufficient calcium and vitamin D for bone health.",
+    "exercises": [
+      {
+        "id": "di_1",
+        "name": "Seated Leg Extensions",
+        "description": "Slowly extend one leg straight out, hold, and return.",
+        "reps": "10 reps each leg",
+        "gifUrl": "https://makeagif.com/gif/seated-leg-extension-45-degrees-YWNjdO.gif"
+      },
+      {
+        "id": "di_2",
+        "name": "Ankle Pumps",
+        "description": "Point toes up towards the ceiling, then push down towards the floor.",
+        "reps": "20 reps",
+        "gifUrl": "https://makeagif.com/gif/ankle-pumps-LhgY3P.gif"
+      }
+    ]
+  }
+}
