@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -8,6 +8,7 @@ import { useAuth } from '@/store/AuthContext';
 import { VitalsService } from '@/services/vitalsService';
 import { Vitals, UserProfile } from '@/types';
 import { useTheme } from '@/hooks/use-theme';
+import { DailyCalorieTracker } from '@/components/calorie-tracker/DailyCalorieTracker';
 
 interface VitalMetricProps {
   label: string;
@@ -20,20 +21,36 @@ interface VitalMetricProps {
   onPressLog?: () => void;
 }
 
-function VitalCard({ label, value, unit, iconName, accentColor, isOutlier, statusText, onPressLog }: VitalMetricProps) {
+function VitalCard({
+  label,
+  value,
+  unit,
+  iconName,
+  accentColor,
+  isOutlier,
+  statusText,
+  onPressLog,
+}: VitalMetricProps) {
   const colors = useTheme();
 
   return (
-    <View style={[
-      styles.vitalCard, 
-      { backgroundColor: colors.backgroundElement, borderColor: isOutlier ? colors.danger : colors.border },
-      isOutlier && { borderWidth: 2 }
-    ]}>
+    <View
+      style={[
+        styles.vitalCard,
+        {
+          backgroundColor: colors.backgroundElement,
+          borderColor: isOutlier ? colors.danger : colors.border,
+        },
+        isOutlier && { borderWidth: 2 },
+      ]}
+    >
       <View style={styles.cardHeader}>
         <View style={[styles.iconCircle, { backgroundColor: accentColor + '1E' }]}>
-          <Ionicons name={iconName} size={22} color={accentColor} />
+          <Ionicons name={iconName} size={20} color={accentColor} />
         </View>
-        <Text style={[styles.vitalLabel, { color: colors.textSecondary }]}>{label}</Text>
+        <Text style={[styles.vitalLabel, { color: colors.textSecondary }]} numberOfLines={1}>
+          {label}
+        </Text>
       </View>
 
       {value ? (
@@ -42,24 +59,28 @@ function VitalCard({ label, value, unit, iconName, accentColor, isOutlier, statu
           <Text style={[styles.vitalUnit, { color: colors.textSecondary }]}>{unit}</Text>
         </View>
       ) : (
-        <TouchableOpacity style={styles.noDataRow} onPress={onPressLog}>
+        <TouchableOpacity style={styles.noDataRow} onPress={onPressLog} activeOpacity={0.7}>
           <Text style={[styles.noDataText, { color: colors.primary }]}>+ Log reading</Text>
         </TouchableOpacity>
       )}
 
       <View style={styles.cardFooter}>
         {isOutlier ? (
-          <View style={[styles.statusBadge, { backgroundColor: colors.danger + '1E' }]}>
-            <Ionicons name="alert-circle" size={14} color={colors.danger} />
+          <View style={[styles.statusBadge, { backgroundColor: colors.danger + '1A' }]}>
+            <Ionicons name="alert-circle" size={13} color={colors.danger} />
             <Text style={[styles.statusText, { color: colors.danger }]}>High Reading</Text>
           </View>
         ) : value ? (
-          <View style={[styles.statusBadge, { backgroundColor: colors.success + '1E' }]}>
-            <Ionicons name="checkmark-circle" size={14} color={colors.success} />
-            <Text style={[styles.statusText, { color: colors.success }]}>{statusText || 'Normal Range'}</Text>
+          <View style={[styles.statusBadge, { backgroundColor: colors.success + '1A' }]}>
+            <Ionicons name="checkmark-circle" size={13} color={colors.success} />
+            <Text style={[styles.statusText, { color: colors.success }]}>
+              {statusText || 'Normal Range'}
+            </Text>
           </View>
         ) : (
-          <Text style={[styles.timestampText, { color: colors.textSecondary }]}>Not logged today</Text>
+          <Text style={[styles.timestampText, { color: colors.textSecondary }]}>
+            Not logged today
+          </Text>
         )}
       </View>
     </View>
@@ -70,7 +91,7 @@ export default function HomeScreen() {
   const { user } = useAuth();
   const router = useRouter();
   const colors = useTheme();
-  
+
   const [latestVitals, setLatestVitals] = useState<Vitals | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
 
@@ -78,7 +99,9 @@ export default function HomeScreen() {
     if (user) {
       const vitals = await VitalsService.getVitals(user);
       if (vitals.length > 0) {
-        const sorted = vitals.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        const sorted = vitals.sort(
+          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+        );
         setLatestVitals(sorted[0]);
       } else {
         setLatestVitals(null);
@@ -95,26 +118,27 @@ export default function HomeScreen() {
   );
 
   const ranges = profile?.healthyRanges;
-  const isBpOutlier = latestVitals?.bloodPressureSys && ranges?.bpSysMax 
-    ? latestVitals.bloodPressureSys > ranges.bpSysMax 
-    : false;
-  const isSugarOutlier = latestVitals?.bloodSugar && ranges?.sugarMax 
-    ? latestVitals.bloodSugar > ranges.sugarMax 
-    : false;
+  const isBpOutlier =
+    latestVitals?.bloodPressureSys && ranges?.bpSysMax
+      ? latestVitals.bloodPressureSys > ranges.bpSysMax
+      : false;
+  const isSugarOutlier =
+    latestVitals?.bloodSugar && ranges?.sugarMax
+      ? latestVitals.bloodSugar > ranges.sugarMax
+      : false;
 
   const todayFormatted = new Date().toLocaleDateString('en-US', {
     weekday: 'short',
     month: 'short',
-    day: 'numeric'
+    day: 'numeric',
   });
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        
         {/* Header Greeting */}
         <View style={styles.header}>
-          <View>
+          <View style={{ flex: 1 }}>
             <Text style={[styles.greeting, { color: colors.textSecondary }]}>
               {todayFormatted}
             </Text>
@@ -125,17 +149,23 @@ export default function HomeScreen() {
 
           {profile?.disabilityCategory ? (
             <View style={[styles.categoryPill, { backgroundColor: colors.primary + '18' }]}>
-              <Ionicons name="medical" size={14} color={colors.primary} style={{ marginRight: 4 }} />
+              <Ionicons name="medical" size={14} color={colors.primary} style={{ marginRight: 5 }} />
               <Text style={[styles.categoryPillText, { color: colors.primary }]}>
                 {profile.disabilityCategory}
               </Text>
             </View>
           ) : (
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[styles.categoryPillPrompt, { backgroundColor: colors.warning + '1E' }]}
               onPress={() => router.push('/report-upload')}
+              activeOpacity={0.8}
             >
-              <Ionicons name="alert-circle-outline" size={14} color={colors.warning} style={{ marginRight: 4 }} />
+              <Ionicons
+                name="alert-circle-outline"
+                size={14}
+                color={colors.warning}
+                style={{ marginRight: 4 }}
+              />
               <Text style={[styles.categoryPillText, { color: colors.warning }]}>
                 Set Category
               </Text>
@@ -148,80 +178,96 @@ export default function HomeScreen() {
           <View style={styles.heroContent}>
             <Text style={styles.heroTitle}>Track Your Daily Vitals</Text>
             <Text style={styles.heroSubtitle}>Stay ahead by logging BP, sugar, HR, and weight.</Text>
-            
-            <TouchableOpacity 
-              style={styles.heroButton} 
+
+            <TouchableOpacity
+              style={styles.heroButton}
               onPress={() => router.push('/vitals-entry')}
-              activeOpacity={0.85}
+              activeOpacity={0.88}
             >
-              <Ionicons name="add-circle" size={20} color={colors.primary} style={{ marginRight: 6 }} />
+              <Ionicons name="add-circle" size={19} color={colors.primary} style={{ marginRight: 6 }} />
               <Text style={[styles.heroButtonText, { color: colors.primary }]}>Log New Vitals</Text>
             </TouchableOpacity>
           </View>
-          <Ionicons name="pulse" size={90} color="rgba(255,255,255,0.2)" style={styles.heroBgIcon} />
+          <Ionicons name="pulse" size={96} color="rgba(255,255,255,0.18)" style={styles.heroBgIcon} />
         </View>
 
-        {/* Vitals Grid */}
+        {/* Vitals Section Header */}
         <View style={styles.sectionHeaderRow}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Today's Overview</Text>
-          <TouchableOpacity onPress={() => router.push('/vitals-history')}>
+          <View>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Today's Overview</Text>
+            <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>Key health markers</Text>
+          </View>
+          <TouchableOpacity onPress={() => router.push('/vitals-history')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Text style={[styles.viewHistoryLink, { color: colors.primary }]}>View History →</Text>
           </TouchableOpacity>
         </View>
 
+        {/* Vitals Grid */}
         <View style={styles.vitalsGrid}>
-          <VitalCard 
-            label="Blood Pressure" 
-            value={latestVitals?.bloodPressureSys && latestVitals?.bloodPressureDia ? `${latestVitals.bloodPressureSys}/${latestVitals.bloodPressureDia}` : undefined} 
-            unit="mmHg" 
-            iconName="heart" 
+          <VitalCard
+            label="Blood Pressure"
+            value={
+              latestVitals?.bloodPressureSys && latestVitals?.bloodPressureDia
+                ? `${latestVitals.bloodPressureSys}/${latestVitals.bloodPressureDia}`
+                : undefined
+            }
+            unit="mmHg"
+            iconName="heart"
             accentColor={colors.bp}
             isOutlier={isBpOutlier}
             onPressLog={() => router.push('/vitals-entry')}
           />
-          <VitalCard 
-            label="Blood Sugar" 
-            value={latestVitals?.bloodSugar ? `${latestVitals.bloodSugar}` : undefined} 
-            unit="mg/dL" 
-            iconName="water" 
+          <VitalCard
+            label="Blood Sugar"
+            value={latestVitals?.bloodSugar ? `${latestVitals.bloodSugar}` : undefined}
+            unit="mg/dL"
+            iconName="water"
             accentColor={colors.sugar}
             isOutlier={isSugarOutlier}
             onPressLog={() => router.push('/vitals-entry')}
           />
-          <VitalCard 
-            label="Heart Rate" 
-            value={latestVitals?.heartRate ? `${latestVitals.heartRate}` : undefined} 
-            unit="bpm" 
-            iconName="fitness" 
+          <VitalCard
+            label="Heart Rate"
+            value={latestVitals?.heartRate ? `${latestVitals.heartRate}` : undefined}
+            unit="bpm"
+            iconName="fitness"
             accentColor={colors.heartRate}
             onPressLog={() => router.push('/vitals-entry')}
           />
-          <VitalCard 
-            label="Weight" 
-            value={latestVitals?.weight ? `${latestVitals.weight}` : undefined} 
-            unit="kg" 
-            iconName="scale" 
+          <VitalCard
+            label="Body Weight"
+            value={latestVitals?.weight ? `${latestVitals.weight}` : undefined}
+            unit="kg"
+            iconName="scale"
             accentColor={colors.weight}
             onPressLog={() => router.push('/vitals-entry')}
           />
         </View>
 
-        {/* Quick Plan Navigation */}
-        <TouchableOpacity 
-          style={[styles.quickPlanCard, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}
+        {/* Daily Calorie Tracker Section */}
+        <DailyCalorieTracker />
+
+        {/* Quick Plan Navigation Card */}
+        <TouchableOpacity
+          style={[
+            styles.quickPlanCard,
+            { backgroundColor: colors.backgroundElement, borderColor: colors.border },
+          ]}
           onPress={() => router.push('/plan')}
-          activeOpacity={0.8}
+          activeOpacity={0.85}
         >
           <View style={[styles.quickPlanIconCircle, { backgroundColor: colors.success + '18' }]}>
-            <Ionicons name="barbell-outline" size={28} color={colors.success} />
+            <Ionicons name="barbell-outline" size={26} color={colors.success} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={[styles.quickPlanTitle, { color: colors.text }]}>My Personalized Plan</Text>
             <Text style={[styles.quickPlanSubtitle, { color: colors.textSecondary }]}>
-              {profile?.disabilityCategory ? `Workouts & Diet for ${profile.disabilityCategory}` : 'Set category to view plan'}
+              {profile?.disabilityCategory
+                ? `6 Target Workouts & Diet for ${profile.disabilityCategory}`
+                : 'Set category to view workouts & nutrition'}
             </Text>
           </View>
-          <Ionicons name="chevron-forward" size={22} color={colors.textSecondary} />
+          <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
         </TouchableOpacity>
 
         <View style={{ height: 40 }} />
@@ -241,119 +287,134 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 20,
+    alignItems: 'center',
+    marginBottom: 18,
+    gap: 12,
   },
   greeting: {
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: 13,
+    fontWeight: '600',
     marginBottom: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   userName: {
-    fontSize: 26,
+    fontSize: 25,
     fontWeight: '800',
-    letterSpacing: -0.5,
+    letterSpacing: -0.4,
   },
   categoryPill: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    marginTop: 4,
+    paddingVertical: 7,
+    borderRadius: 16,
   },
   categoryPillPrompt: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    marginTop: 4,
+    paddingVertical: 7,
+    borderRadius: 16,
   },
   categoryPillText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
   },
   heroBanner: {
-    borderRadius: 24,
-    padding: 24,
-    marginBottom: 24,
+    borderRadius: 22,
+    padding: 22,
+    marginBottom: 22,
     position: 'relative',
     overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 3,
   },
   heroContent: {
     zIndex: 1,
   },
   heroTitle: {
     color: '#FFFFFF',
-    fontSize: 22,
+    fontSize: 21,
     fontWeight: '800',
-    marginBottom: 6,
+    marginBottom: 4,
   },
   heroSubtitle: {
-    color: 'rgba(255, 255, 255, 0.85)',
-    fontSize: 14,
-    marginBottom: 18,
-    maxWidth: '80%',
-    lineHeight: 20,
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: 13,
+    marginBottom: 16,
+    maxWidth: '82%',
+    lineHeight: 18,
   },
   heroButton: {
     backgroundColor: '#FFFFFF',
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
   },
   heroButtonText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
   },
   heroBgIcon: {
     position: 'absolute',
-    right: -10,
-    bottom: -10,
+    right: -12,
+    bottom: -16,
   },
   sectionHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 14,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: '700',
   },
+  sectionSubtitle: {
+    fontSize: 12,
+    marginTop: 1,
+  },
   viewHistoryLink: {
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '700',
   },
   vitalsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    gap: 14,
-    marginBottom: 24,
+    gap: 12,
+    marginBottom: 20,
   },
   vitalCard: {
-    width: '47.5%',
+    width: '48%',
     borderRadius: 20,
     padding: 16,
     borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 2,
   },
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
+    gap: 8,
   },
   iconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 8,
   },
   vitalLabel: {
     fontSize: 13,
@@ -363,10 +424,10 @@ const styles = StyleSheet.create({
   valueRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   vitalValue: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '800',
     marginRight: 4,
   },
@@ -375,11 +436,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   noDataRow: {
-    paddingVertical: 8,
-    marginBottom: 8,
+    paddingVertical: 6,
+    marginBottom: 6,
   },
   noDataText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
   },
   cardFooter: {
@@ -390,13 +451,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 12,
+    borderRadius: 10,
     alignSelf: 'flex-start',
+    gap: 4,
   },
   statusText: {
     fontSize: 11,
     fontWeight: '700',
-    marginLeft: 4,
   },
   timestampText: {
     fontSize: 11,
@@ -408,11 +469,17 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 20,
     borderWidth: 1,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 2,
   },
   quickPlanIconCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 14,
@@ -423,6 +490,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   quickPlanSubtitle: {
-    fontSize: 13,
+    fontSize: 12,
+    lineHeight: 16,
   },
 });

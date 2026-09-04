@@ -11,6 +11,13 @@ export interface Vitals {
 export interface UserProfile {
   username: string;
   disabilityCategory?: string;
+  calorieCalculator?: {
+    weightKg: number;
+    heightCm: number;
+    age: number;
+    gender: 'male' | 'female';
+    activityLevel: 'sedentary' | 'light' | 'moderate';
+  };
   healthyRanges: {
     bpSysMax: number;
     bpDiaMax: number;

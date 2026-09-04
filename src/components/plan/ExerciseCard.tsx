@@ -12,6 +12,7 @@ interface ExerciseCardProps {
 
 export function ExerciseCard({ exercise, isCompleted, onToggle }: ExerciseCardProps) {
   const colors = useTheme();
+  const isPlaceholder = !exercise.gifUrl || exercise.gifUrl === 'PLACEHOLDER_GIF_URL' || !exercise.gifUrl.startsWith('http');
 
   return (
     <TouchableOpacity 
@@ -19,26 +20,39 @@ export function ExerciseCard({ exercise, isCompleted, onToggle }: ExerciseCardPr
         styles.card, 
         { 
           backgroundColor: colors.backgroundElement, 
-          borderColor: isCompleted ? colors.success : colors.border 
+          borderColor: isCompleted ? colors.success : colors.border,
         },
         isCompleted && { borderWidth: 2, backgroundColor: colors.success + '0C' }
       ]}
       onPress={onToggle}
-      activeOpacity={0.85}
+      activeOpacity={0.88}
       accessibilityRole="button"
       accessibilityState={{ checked: isCompleted }}
       accessibilityLabel={`Toggle completion for ${exercise.name}`}
     >
-      <View style={styles.imageWrapper}>
-        <Image 
-          source={{ uri: exercise.gifUrl }} 
-          style={styles.image} 
-          resizeMode="cover" 
-        />
-        <View style={[styles.repsTag, { backgroundColor: colors.primary }]}>
-          <Ionicons name="repeat" size={14} color="#FFF" style={{ marginRight: 4 }} />
-          <Text style={styles.repsText}>{exercise.reps}</Text>
-        </View>
+      <View style={[styles.mediaContainer, { backgroundColor: colors.primary + '0D' }]}>
+        {isPlaceholder ? (
+          <View style={styles.placeholderContainer}>
+            <View style={[styles.placeholderIconBadge, { backgroundColor: colors.primary + '18' }]}>
+              <Ionicons name="fitness-outline" size={28} color={colors.primary} />
+            </View>
+            <Text style={[styles.placeholderTitle, { color: colors.text }]}>Exercise Demonstration</Text>
+            <Text style={[styles.placeholderSubtitle, { color: colors.textSecondary }]}>Demo preview & animation guide</Text>
+          </View>
+        ) : (
+          <Image 
+            source={{ uri: exercise.gifUrl }} 
+            style={styles.image} 
+            resizeMode="cover" 
+          />
+        )}
+
+        {exercise.reps && (
+          <View style={[styles.repsTag, { backgroundColor: colors.primary }]}>
+            <Ionicons name="repeat" size={13} color="#FFF" style={{ marginRight: 4 }} />
+            <Text style={styles.repsText}>{exercise.reps}</Text>
+          </View>
+        )}
       </View>
       
       <View style={styles.content}>
@@ -47,8 +61,8 @@ export function ExerciseCard({ exercise, isCompleted, onToggle }: ExerciseCardPr
           
           <View style={[
             styles.checkbox, 
-            { borderColor: isCompleted ? colors.success : colors.textSecondary },
-            isCompleted && { backgroundColor: colors.success }
+            { borderColor: isCompleted ? colors.success : colors.border },
+            isCompleted && { backgroundColor: colors.success, borderColor: colors.success }
           ]}>
             {isCompleted && <Ionicons name="checkmark" size={18} color="#FFF" />}
           </View>
@@ -68,12 +82,40 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginBottom: 16,
     borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
-  imageWrapper: {
+  mediaContainer: {
     position: 'relative',
     width: '100%',
-    height: 180,
-    backgroundColor: '#E2E8F0',
+    height: 148,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  placeholderContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+  },
+  placeholderIconBadge: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  placeholderTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  placeholderSubtitle: {
+    fontSize: 12,
+    fontWeight: '500',
   },
   image: {
     width: '100%',
@@ -81,13 +123,13 @@ const styles = StyleSheet.create({
   },
   repsTag: {
     position: 'absolute',
-    bottom: 12,
+    bottom: 10,
     left: 12,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingVertical: 5,
+    borderRadius: 10,
   },
   repsText: {
     color: '#FFFFFF',
@@ -104,21 +146,21 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   title: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '700',
     flex: 1,
     paddingRight: 10,
   },
   checkbox: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     borderWidth: 2,
     justifyContent: 'center',
     alignItems: 'center',
   },
   description: {
     fontSize: 14,
-    lineHeight: 20,
+    lineHeight: 21,
   },
 });

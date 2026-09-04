@@ -45,12 +45,14 @@ export default function ReportUploadScreen() {
         result = await ImagePicker.launchImageLibraryAsync(options);
       }
 
-      if (!result.canceled && result.assets[0].base64) {
+      if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
         setImageUri(asset.uri);
         // Detect mime type from the URI
         const mimeType = asset.uri.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
-        analyzeImage(asset.base64, mimeType);
+        if (asset.base64) {
+          analyzeImage(asset.base64, mimeType);
+        }
       }
     } catch (e) {
       Alert.alert('Error', 'Failed to pick image.');

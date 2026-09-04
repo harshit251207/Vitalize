@@ -60,7 +60,7 @@ export default function ProfileScreen() {
           <TouchableOpacity 
             style={[styles.actionButton, { backgroundColor: colors.primary }]} 
             onPress={() => router.push('/report-upload')}
-            activeOpacity={0.8}
+            activeOpacity={0.85}
           >
             <Ionicons name="cloud-upload-outline" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
             <Text style={styles.actionButtonText}>
@@ -68,6 +68,35 @@ export default function ProfileScreen() {
             </Text>
           </TouchableOpacity>
         </View>
+
+        {/* Calorie Calculator Profile Info */}
+        {profile?.calorieCalculator && (
+          <View style={[styles.sectionCard, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="flame" size={22} color={colors.primary} style={{ marginRight: 8 }} />
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Nutrition Parameters</Text>
+            </View>
+
+            <View style={styles.rangeRow}>
+              <Text style={[styles.rangeLabel, { color: colors.textSecondary }]}>Weight / Height:</Text>
+              <Text style={[styles.rangeValue, { color: colors.text }]}>
+                {profile.calorieCalculator.weightKg} kg / {profile.calorieCalculator.heightCm} cm
+              </Text>
+            </View>
+            <View style={styles.rangeRow}>
+              <Text style={[styles.rangeLabel, { color: colors.textSecondary }]}>Age & Gender:</Text>
+              <Text style={[styles.rangeValue, { color: colors.text, textTransform: 'capitalize' }]}>
+                {profile.calorieCalculator.age} yrs • {profile.calorieCalculator.gender}
+              </Text>
+            </View>
+            <View style={styles.rangeRow}>
+              <Text style={[styles.rangeLabel, { color: colors.textSecondary }]}>Activity Level:</Text>
+              <Text style={[styles.rangeValue, { color: colors.text, textTransform: 'capitalize' }]}>
+                {profile.calorieCalculator.activityLevel}
+              </Text>
+            </View>
+          </View>
+        )}
 
         {/* Healthy Ranges Info Card */}
         <View style={[styles.sectionCard, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
@@ -119,10 +148,15 @@ const styles = StyleSheet.create({
   },
   userCard: {
     padding: 24,
-    borderRadius: 24,
+    borderRadius: 22,
     borderWidth: 1,
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
   avatarCircle: {
     width: 80,
@@ -148,9 +182,14 @@ const styles = StyleSheet.create({
   },
   sectionCard: {
     padding: 20,
-    borderRadius: 20,
+    borderRadius: 22,
     borderWidth: 1,
-    marginBottom: 20,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -172,7 +211,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   actionButton: {
-    height: 52,
+    height: 50,
     borderRadius: 14,
     flexDirection: 'row',
     justifyContent: 'center',
@@ -180,7 +219,7 @@ const styles = StyleSheet.create({
   },
   actionButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
   },
   rangeRow: {
@@ -189,7 +228,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   rangeLabel: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '500',
   },
   rangeValue: {
@@ -197,7 +236,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   logoutButton: {
-    height: 58,
+    height: 54,
     borderRadius: 16,
     borderWidth: 2,
     flexDirection: 'row',
@@ -206,7 +245,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   logoutButtonText: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
   },
 });
