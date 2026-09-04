@@ -70,7 +70,7 @@ export default function LoginScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         <View style={styles.headerSection}>
           <View style={[styles.logoBadge, { backgroundColor: colors.primary + '18' }]}>
-            <Ionicons name="heart-pulse" size={54} color={colors.primary} />
+            <Ionicons name="pulse" size={54} color={colors.primary} />
           </View>
           <Text style={[styles.brandTitle, { color: colors.text }]}>Vitalize</Text>
           <Text style={[styles.brandTagline, { color: colors.textSecondary }]}>

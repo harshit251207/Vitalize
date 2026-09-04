@@ -28,7 +28,7 @@ export default function AppTabs() {
         options={{ 
           title: 'Home',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="heart-pulse-outline" size={size || 24} color={color} />
+            <Ionicons name="pulse-outline" size={size || 24} color={color} />
           ),
         }} 
       />
