@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator, Alert, Image, ScrollView } from 'react-native';
-import { useRouter } from 'expo-router';
-import * as ImagePicker from 'expo-image-picker';
-import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/hooks/use-theme';
-import { AIService, DisabilityCategory, DisabilityCategories } from '@/services/aiService';
+import { AIService, DisabilityCategories, DisabilityCategory } from '@/services/aiService';
 import { VitalsService } from '@/services/vitalsService';
 import { useAuth } from '@/store/AuthContext';
+import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import { useRouter } from 'expo-router';
+import { useState } from 'react';
+import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function ReportUploadScreen() {
   const { user } = useAuth();
@@ -142,7 +142,7 @@ export default function ReportUploadScreen() {
         </View>
       </View>
 
-      {!imageUri ? (
+      {!imageUri && !showManualSelection ? (
         <View style={styles.uploadSection}>
           <Text style={[styles.description, { color: colors.textSecondary }]}>
             Upload your medical or disability report. AI vision will scan the document and suggest your mobility category to personalize your plans.
@@ -189,9 +189,11 @@ export default function ReportUploadScreen() {
         </View>
       ) : (
         <View style={styles.resultSection}>
+          {imageUri && (
           <View style={[styles.imageFrame, { borderColor: colors.border }]}>
             <Image source={{ uri: imageUri }} style={styles.previewImage} />
           </View>
+          )}
 
           {isAnalyzing && (
             <View style={[styles.card, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
