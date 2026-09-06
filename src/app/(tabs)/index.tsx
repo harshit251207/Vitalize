@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -9,6 +9,7 @@ import { VitalsService } from '@/services/vitalsService';
 import { Vitals, UserProfile } from '@/types';
 import { useTheme } from '@/hooks/use-theme';
 import { DailyCalorieTracker } from '@/components/calorie-tracker/DailyCalorieTracker';
+import { fetchUserProfile } from '@/services/authService';
 
 interface VitalMetricProps {
   label: string;
@@ -94,6 +95,36 @@ export default function HomeScreen() {
 
   const [latestVitals, setLatestVitals] = useState<Vitals | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [profileUsername, setProfileUsername] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const loadProfileUsername = async () => {
+      if (!user) {
+        setProfileUsername(null);
+        return;
+      }
+
+      try {
+        const firebaseProfile = await fetchUserProfile(user);
+        const username = firebaseProfile?.username;
+        if (isActive) {
+          setProfileUsername(typeof username === 'string' && username.trim() ? username.trim() : null);
+        }
+      } catch {
+        if (isActive) {
+          setProfileUsername(null);
+        }
+      }
+    };
+
+    loadProfileUsername();
+
+    return () => {
+      isActive = false;
+    };
+  }, [user]);
 
   const loadData = async () => {
     if (user) {
@@ -143,7 +174,7 @@ export default function HomeScreen() {
               {todayFormatted}
             </Text>
             <Text style={[styles.userName, { color: colors.text }]}>
-              Hello, {user || 'User'} 👋
+              {profileUsername ? `Hello, ${profileUsername} 👋` : 'Hello!'}
             </Text>
           </View>
 
