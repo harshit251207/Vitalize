@@ -1,9 +1,9 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { Storage } from '@/services/storage';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { auth } from '@/services/firebase';
 
 interface AuthContextType {
   user: string | null;
-  login: (username: string) => Promise<void>;
   logout: () => Promise<void>;
   isLoading: boolean;
 }
@@ -23,27 +23,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check if user is logged in
-    Storage.getItem('currentUser').then((storedUser) => {
-      if (storedUser) {
-        setUser(storedUser);
-      }
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      setUser(firebaseUser?.uid ?? null);
       setIsLoading(false);
     });
+
+    return unsubscribe;
   }, []);
 
-  const login = async (username: string) => {
-    await Storage.setItem('currentUser', username);
-    setUser(username);
-  };
-
   const logout = async () => {
-    await Storage.removeItem('currentUser');
-    setUser(null);
+    await signOut(auth);
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, isLoading }}>
+    <AuthContext.Provider value={{ user, logout, isLoading }}>
       {children}
     </AuthContext.Provider>
   );

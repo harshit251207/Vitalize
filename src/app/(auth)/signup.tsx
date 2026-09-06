@@ -1,40 +1,44 @@
 import React, { useState } from 'react';
-import { StyleSheet, TextInput, View, Text, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { ActivityIndicator, StyleSheet, TextInput, View, Text, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from '@/store/AuthContext';
-import { Storage } from '@/services/storage';
+import { signUpUser } from '@/services/authService';
 import { useTheme } from '@/hooks/use-theme';
 
+function getSignupErrorMessage(error: unknown): string {
+  const code = (error as { code?: string }).code?.replace('auth/', '');
+  const messages: Record<string, string> = {
+    'email-already-in-use': 'This email is already in use. Try logging in instead.',
+    'weak-password': 'Your password is too weak. Please choose a stronger password.',
+    'invalid-email': 'Enter a valid email address.',
+  };
+
+  return (code && messages[code]) || (code ? `Sign up failed: ${code}` : 'Unable to create your account. Please try again.');
+}
+
 export default function SignupScreen() {
+  const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const { login } = useAuth();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [authError, setAuthError] = useState('');
   const router = useRouter();
   const colors = useTheme();
 
   const handleSignup = async () => {
-    if (!username.trim() || !password.trim()) {
-      Alert.alert('Missing Details', 'Please choose both a username and password.');
+    if (!email.trim() || !username.trim() || !password.trim()) {
+      setAuthError('Please enter your email, username, and password.');
       return;
     }
 
+    setAuthError('');
+    setIsSubmitting(true);
     try {
-      const storedUsers = await Storage.getItem('users');
-      const users = storedUsers ? JSON.parse(storedUsers) : {};
-
-      if (users[username]) {
-        Alert.alert('Username Unavailable', 'This username is already taken. Please choose another.');
-        return;
-      }
-
-      users[username] = password;
-      await Storage.setItem('users', JSON.stringify(users));
-      
-      // Auto login after signup
-      await login(username);
-    } catch (e) {
-      Alert.alert('Error', 'An unexpected error occurred during signup.');
+      await signUpUser(email.trim(), password, username.trim());
+    } catch (error) {
+      setAuthError(getSignupErrorMessage(error));
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -55,6 +59,24 @@ export default function SignupScreen() {
         </View>
 
         <View style={[styles.card, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
+          <View style={styles.inputGroup}>
+            <Text style={[styles.inputLabel, { color: colors.text }]}>Email</Text>
+            <View style={[styles.inputWrapper, { borderColor: colors.border, backgroundColor: colors.background }]}>
+              <Ionicons name="mail-outline" size={22} color={colors.textSecondary} style={styles.inputIcon} />
+              <TextInput
+                style={[styles.input, { color: colors.text }]}
+                placeholder="Enter your email"
+                placeholderTextColor={colors.textSecondary}
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+                autoComplete="email"
+                keyboardType="email-address"
+                accessibilityLabel="Email input"
+              />
+            </View>
+          </View>
+
           <View style={styles.inputGroup}>
             <Text style={[styles.inputLabel, { color: colors.text }]}>Choose Username</Text>
             <View style={[styles.inputWrapper, { borderColor: colors.border, backgroundColor: colors.background }]}>
@@ -87,15 +109,25 @@ export default function SignupScreen() {
             </View>
           </View>
 
+          {!!authError && (
+            <View style={[styles.errorBox, { backgroundColor: (colors.danger || '#E53E3E') + '18' }]}>
+              <Ionicons name="alert-circle-outline" size={18} color={colors.danger || '#E53E3E'} style={styles.errorIcon} />
+              <Text style={[styles.errorText, { color: colors.danger || '#E53E3E' }]}>{authError}</Text>
+            </View>
+          )}
+
           <TouchableOpacity 
-            style={[styles.button, { backgroundColor: colors.primary }]} 
+            style={[styles.button, { backgroundColor: colors.primary, opacity: isSubmitting ? 0.7 : 1 }]}
             onPress={handleSignup}
+            disabled={isSubmitting}
             accessibilityRole="button"
             accessibilityLabel="Signup Button"
             activeOpacity={0.8}
           >
-            <Text style={styles.buttonText}>Sign Up & Get Started</Text>
-            <Ionicons name="checkmark-circle" size={22} color="#FFFFFF" style={{ marginLeft: 8 }} />
+            {isSubmitting ? <ActivityIndicator color="#FFFFFF" /> : <>
+              <Text style={styles.buttonText}>Sign Up & Get Started</Text>
+              <Ionicons name="checkmark-circle" size={22} color="#FFFFFF" style={{ marginLeft: 8 }} />
+            </>}
           </TouchableOpacity>
         </View>
 
@@ -190,5 +222,20 @@ const styles = StyleSheet.create({
   },
   linkText: {
     fontSize: 16,
+  },
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+  },
+  errorIcon: {
+    marginRight: 8,
+  },
+  errorText: {
+    flex: 1,
+    fontSize: 14,
+    lineHeight: 20,
   },
 });

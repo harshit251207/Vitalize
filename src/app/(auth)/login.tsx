@@ -1,65 +1,46 @@
 import React, { useState } from 'react';
-import { StyleSheet, TextInput, View, Text, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { ActivityIndicator, StyleSheet, TextInput, View, Text, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from '@/store/AuthContext';
-import { Storage } from '@/services/storage';
+import { loginUser } from '@/services/authService';
 import { useTheme } from '@/hooks/use-theme';
 
+function getLoginErrorMessage(error: unknown): string {
+  const code = (error as { code?: string }).code?.replace('auth/', '');
+  const messages: Record<string, string> = {
+    'invalid-email': 'Enter a valid email address.',
+    'invalid-credential': 'The email or password is incorrect.',
+    'user-not-found': 'No account exists for this email address.',
+    'wrong-password': 'The email or password is incorrect.',
+    'too-many-requests': 'Too many attempts. Please try again later.',
+  };
+
+  return (code && messages[code]) || (code ? `Login failed: ${code}` : 'Unable to log in. Please try again.');
+}
+
 export default function LoginScreen() {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const { login } = useAuth();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [authError, setAuthError] = useState('');
   const router = useRouter();
   const colors = useTheme();
 
   const handleLogin = async () => {
-    if (!username.trim() || !password.trim()) {
-      Alert.alert('Missing Details', 'Please enter both your username and password.');
+    if (!email.trim() || !password.trim()) {
+      setAuthError('Please enter both your email and password.');
       return;
     }
 
+    setAuthError('');
+    setIsSubmitting(true);
     try {
-      const storedUsers = await Storage.getItem('users');
-      console.log('Stored users raw:', storedUsers);
-      const users = storedUsers ? JSON.parse(storedUsers) : {};
-      console.log('Parsed users:', JSON.stringify(users));
-
-      if (users[username] && users[username] === password) {
-        await login(username);
-      } else {
-        Alert.alert('Invalid Credentials', 'The username or password you entered is incorrect. If you forgot your credentials, use "Reset Data" below.');
-      }
-    } catch (e) {
-      console.error('Login error:', e);
-      Alert.alert('Error', 'Stored data may be corrupted. Please use "Reset Data" below to fix this.');
+      await loginUser(email.trim(), password);
+    } catch (error) {
+      setAuthError(getLoginErrorMessage(error));
+    } finally {
+      setIsSubmitting(false);
     }
-  };
-
-  const handleResetData = () => {
-    Alert.alert(
-      'Reset All Data',
-      'This will clear all saved accounts and app data. You can then create a new account. Continue?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reset',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await Storage.removeItem('users');
-              await Storage.removeItem('currentUser');
-              Alert.alert('Data Reset', 'All data has been cleared. Please sign up with a new account.', [
-                { text: 'Go to Sign Up', onPress: () => router.push('/(auth)/signup') }
-              ]);
-            } catch (e) {
-              console.error('Reset error:', e);
-              Alert.alert('Error', 'Failed to reset data.');
-            }
-          }
-        }
-      ]
-    );
   };
 
   return (
@@ -85,17 +66,19 @@ export default function LoginScreen() {
           </Text>
 
           <View style={styles.inputGroup}>
-            <Text style={[styles.inputLabel, { color: colors.text }]}>Username</Text>
+            <Text style={[styles.inputLabel, { color: colors.text }]}>Email</Text>
             <View style={[styles.inputWrapper, { borderColor: colors.border, backgroundColor: colors.background }]}>
-              <Ionicons name="person-outline" size={22} color={colors.textSecondary} style={styles.inputIcon} />
+              <Ionicons name="mail-outline" size={22} color={colors.textSecondary} style={styles.inputIcon} />
               <TextInput
                 style={[styles.input, { color: colors.text }]}
-                placeholder="Enter your username"
+                placeholder="Enter your email"
                 placeholderTextColor={colors.textSecondary}
-                value={username}
-                onChangeText={setUsername}
+                value={email}
+                onChangeText={setEmail}
                 autoCapitalize="none"
-                accessibilityLabel="Username input"
+                autoComplete="email"
+                keyboardType="email-address"
+                accessibilityLabel="Email input"
               />
             </View>
           </View>
@@ -116,15 +99,25 @@ export default function LoginScreen() {
             </View>
           </View>
 
+          {!!authError && (
+            <View style={[styles.errorBox, { backgroundColor: (colors.danger || '#E53E3E') + '18' }]}>
+              <Ionicons name="alert-circle-outline" size={18} color={colors.danger || '#E53E3E'} style={styles.errorIcon} />
+              <Text style={[styles.errorText, { color: colors.danger || '#E53E3E' }]}>{authError}</Text>
+            </View>
+          )}
+
           <TouchableOpacity 
-            style={[styles.button, { backgroundColor: colors.primary }]} 
+            style={[styles.button, { backgroundColor: colors.primary, opacity: isSubmitting ? 0.7 : 1 }]}
             onPress={handleLogin}
+            disabled={isSubmitting}
             accessibilityRole="button"
             accessibilityLabel="Login Button"
             activeOpacity={0.8}
           >
-            <Text style={styles.buttonText}>Log In</Text>
-            <Ionicons name="arrow-forward" size={22} color="#FFFFFF" style={{ marginLeft: 8 }} />
+            {isSubmitting ? <ActivityIndicator color="#FFFFFF" /> : <>
+              <Text style={styles.buttonText}>Log In</Text>
+              <Ionicons name="arrow-forward" size={22} color="#FFFFFF" style={{ marginLeft: 8 }} />
+            </>}
           </TouchableOpacity>
         </View>
 
@@ -136,18 +129,6 @@ export default function LoginScreen() {
         >
           <Text style={[styles.linkText, { color: colors.textSecondary }]}>
             Don't have an account? <Text style={{ color: colors.primary, fontWeight: 'bold' }}>Sign Up</Text>
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity 
-          onPress={handleResetData}
-          style={styles.resetButton}
-          accessibilityRole="button"
-          accessibilityLabel="Reset Data"
-        >
-          <Ionicons name="refresh-circle-outline" size={18} color={colors.danger || '#E53E3E'} style={{ marginRight: 6 }} />
-          <Text style={[styles.resetText, { color: colors.danger || '#E53E3E' }]}>
-            Reset Data & Start Fresh
           </Text>
         </TouchableOpacity>
       </ScrollView>
@@ -241,15 +222,19 @@ const styles = StyleSheet.create({
   linkText: {
     fontSize: 16,
   },
-  resetButton: {
+  errorBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 16,
+    borderRadius: 12,
     padding: 12,
+    marginBottom: 16,
   },
-  resetText: {
+  errorIcon: {
+    marginRight: 8,
+  },
+  errorText: {
+    flex: 1,
     fontSize: 14,
-    fontWeight: '600',
+    lineHeight: 20,
   },
 });
