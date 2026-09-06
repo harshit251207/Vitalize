@@ -6,11 +6,10 @@ export const signUpUser = async (email: string, password: string, username: stri
   const userCredential = await createUserWithEmailAndPassword(auth, email, password);
   const user = userCredential.user;
 
-  // Initialize Firestore profile document for the user
+  // Initialize Firestore profile document for the user (vitals stored in subcollection)
   await setDoc(doc(db, 'users', user.uid), {
     username,
     email,
-    vitalsHistory: [],
     classificationResult: null,
     createdAt: new Date().toISOString(),
   });
