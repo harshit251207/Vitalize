@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -204,23 +204,31 @@ export default function HomeScreen() {
           )}
         </View>
 
-        {/* Hero CTA Banner */}
-        <View style={[styles.heroBanner, { backgroundColor: colors.primary }]}>
-          <View style={styles.heroContent}>
-            <Text style={styles.heroTitle}>Track Your Daily Vitals</Text>
-            <Text style={styles.heroSubtitle}>Stay ahead by logging BP, sugar, HR, and weight.</Text>
+        <Text
+          style={[
+            styles.sectionTitle,
+            styles.careHeading,
+            { color: colors.text },
+          ]}
+        >
+          SPECIAL CARE FOR SPECIAL PEOPLE
+        </Text>
 
-            <TouchableOpacity
-              style={styles.heroButton}
-              onPress={() => router.push('/vitals-entry')}
-              activeOpacity={0.88}
-            >
-              <Ionicons name="add-circle" size={19} color={colors.primary} style={{ marginRight: 6 }} />
-              <Text style={[styles.heroButtonText, { color: colors.primary }]}>Log New Vitals</Text>
-            </TouchableOpacity>
-          </View>
-          <Ionicons name="pulse" size={96} color="rgba(255,255,255,0.18)" style={styles.heroBgIcon} />
-        </View>
+        <Image
+          source={require('@/assets/images/disability-illustration.png')}
+          style={styles.careIllustration}
+          resizeMode="contain"
+          accessibilityLabel="People with different disabilities"
+        />
+
+        <TouchableOpacity
+          style={[styles.logVitalsButton, { backgroundColor: colors.primary }]}
+          onPress={() => router.push('/vitals-entry')}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="add-circle" size={20} color="#FFFFFF" style={{ marginRight: 6 }} />
+          <Text style={styles.logVitalsButtonText}>Log New Vitals</Text>
+        </TouchableOpacity>
 
         {/* Vitals Section Header */}
         <View style={styles.sectionHeaderRow}>
@@ -352,51 +360,28 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-  heroBanner: {
-    borderRadius: 22,
-    padding: 22,
-    marginBottom: 22,
-    position: 'relative',
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    elevation: 3,
+  careHeading: {
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 12,
   },
-  heroContent: {
-    zIndex: 1,
-  },
-  heroTitle: {
-    color: '#FFFFFF',
-    fontSize: 21,
-    fontWeight: '800',
-    marginBottom: 4,
-  },
-  heroSubtitle: {
-    color: 'rgba(255, 255, 255, 0.9)',
-    fontSize: 13,
+  careIllustration: {
+    width: '100%',
+    height: 190,
     marginBottom: 16,
-    maxWidth: '82%',
-    lineHeight: 18,
   },
-  heroButton: {
-    backgroundColor: '#FFFFFF',
+  logVitalsButton: {
+    height: 52,
+    borderRadius: 14,
     flexDirection: 'row',
+    justifyContent: 'center',
     alignItems: 'center',
-    alignSelf: 'flex-start',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
+    marginBottom: 22,
   },
-  heroButtonText: {
-    fontSize: 14,
+  logVitalsButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
     fontWeight: '700',
-  },
-  heroBgIcon: {
-    position: 'absolute',
-    right: -12,
-    bottom: -16,
   },
   sectionHeaderRow: {
     flexDirection: 'row',
