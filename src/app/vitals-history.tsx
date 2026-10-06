@@ -1,11 +1,11 @@
 import React, { useState, useCallback } from 'react';
-import { StyleSheet, View, Text, ScrollView, Dimensions, TouchableOpacity } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, Dimensions, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { LineChart } from 'react-native-chart-kit';
 import { Ionicons } from '@expo/vector-icons';
 
 import { useAuth } from '@/store/AuthContext';
-import { VitalsService } from '@/services/vitalsService';
+import { NotAuthenticatedError, getVitalHistory } from '@/services/vitalsService';
 import { Vitals } from '@/types';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -20,12 +20,32 @@ export default function VitalsHistoryScreen() {
   
   const [vitals, setVitals] = useState<Vitals[]>([]);
   const [selectedMetric, setSelectedMetric] = useState<MetricType>('bp');
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadData = async () => {
-    if (user) {
-      const data = await VitalsService.getVitals(user);
+    if (!user) {
+      setVitals([]);
+      setLoadError('Please sign in to view your vitals history.');
+      setIsLoading(false);
+      return;
+    }
+
+    setIsLoading(true);
+    setLoadError(null);
+    try {
+      const data = await getVitalHistory();
       const sorted = data.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
       setVitals(sorted);
+    } catch (e) {
+      setVitals([]);
+      setLoadError(
+        e instanceof NotAuthenticatedError
+          ? e.message
+          : 'Could not load your vitals history. Please check your connection and try again.'
+      );
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -137,7 +157,11 @@ export default function VitalsHistoryScreen() {
       <View style={[styles.chartCard, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
         <Text style={[styles.chartTitle, { color: colors.text }]}>{metricTitleMap[selectedMetric]}</Text>
         
-        {chartData ? (
+        {isLoading ? (
+          <View style={styles.emptyChartState}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        ) : chartData ? (
           <LineChart
             data={chartData}
             width={screenWidth - 72}
@@ -159,7 +183,23 @@ export default function VitalsHistoryScreen() {
       {/* Timeline Logs List */}
       <Text style={[styles.sectionHeading, { color: colors.text }]}>Recent Log Entries</Text>
 
-      {vitals.length > 0 ? (
+      {isLoading ? (
+        <View style={styles.loadingState}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>Loading your vitals…</Text>
+        </View>
+      ) : loadError ? (
+        <View style={styles.loadingState}>
+          <Text style={[styles.noLogsText, { color: colors.textSecondary }]}>{loadError}</Text>
+          <TouchableOpacity
+            style={[styles.retryButton, { backgroundColor: colors.primary }]}
+            onPress={loadData}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.retryButtonText}>Try again</Text>
+          </TouchableOpacity>
+        </View>
+      ) : vitals.length > 0 ? (
         vitals.slice().reverse().map((v) => {
           const dateObj = new Date(v.date);
           const dateStr = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -272,6 +312,21 @@ const styles = StyleSheet.create({
   emptyChartState: {
     paddingVertical: 40,
     alignItems: 'center',
+  },
+  loadingState: {
+    paddingVertical: 32,
+    alignItems: 'center',
+  },
+  retryButton: {
+    marginTop: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
   },
   emptyText: {
     marginTop: 12,

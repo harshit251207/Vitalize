@@ -1,73 +1,46 @@
 import { db } from './firebase';
+import { doc, updateDoc } from 'firebase/firestore';
 import {
-  collection,
-  doc,
-  addDoc,
-  getDocs,
-  updateDoc,
-  query,
-  orderBy,
-  serverTimestamp,
-} from 'firebase/firestore';
+  addVitalReading,
+  getVitalHistory,
+  type VitalReadingInput,
+} from './vitalsService';
 
-export interface VitalsData {
-  bloodPressure?: string;
+export type { VitalReadingInput };
+
+export interface VitalsEntry {
+  id: string;
+  date: string;
+  bloodPressureSys?: number;
+  bloodPressureDia?: number;
   bloodSugar?: number;
   heartRate?: number;
   weight?: number;
 }
 
-export interface VitalsEntry extends VitalsData {
-  id: string;
-  timestamp?: any;
-}
-
 /**
- * Adds a new vitals reading document to the user's vitals subcollection: users/{userId}/vitals/{vitalId}
- * with a server timestamp.
+ * Adds a vitals reading for the currently authenticated user.
+ * Stored at users/{uid}/vitals/{vitalId} with serverTimestamp recordedAt.
  */
-export const addVitalsEntry = async (
-  userId: string,
-  vitalsData: {
-    bloodPressure?: string;
-    bloodSugar?: number;
-    heartRate?: number;
-    weight?: number;
-  }
-) => {
-  const vitalsRef = collection(db, 'users', userId, 'vitals');
-  const docRef = await addDoc(vitalsRef, {
-    ...vitalsData,
-    timestamp: serverTimestamp(),
-  });
-  return docRef.id;
+export const addVitalsEntry = async (vitalsData: VitalReadingInput) => {
+  return addVitalReading(vitalsData);
 };
 
 /**
- * Queries the user's vitals subcollection ordered by timestamp descending.
- * Returns an array of vitals entries.
+ * Returns the signed-in user's vitals, oldest → newest.
  */
-export const getVitalsHistory = async (userId: string): Promise<VitalsEntry[]> => {
-  const vitalsRef = collection(db, 'users', userId, 'vitals');
-  const q = query(vitalsRef, orderBy('timestamp', 'desc'));
-  const querySnapshot = await getDocs(q);
-
-  const entries: VitalsEntry[] = [];
-  querySnapshot.forEach((docSnap) => {
-    entries.push({
-      id: docSnap.id,
-      ...docSnap.data(),
-    } as VitalsEntry);
-  });
-
-  return entries;
+export const getVitalsHistory = async (): Promise<VitalsEntry[]> => {
+  return getVitalHistory();
 };
 
 /**
  * Updates only the classificationResult field on the user's profile document
  * using updateDoc without overwriting other fields.
  */
-export const updateClassificationResult = async (userId: string, category: string) => {
+export const updateClassificationResult = async (
+  userId: string,
+  category: string
+) => {
   const userDocRef = doc(db, 'users', userId);
   await updateDoc(userDocRef, {
     classificationResult: category,

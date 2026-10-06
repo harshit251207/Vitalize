@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, Alert, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, Alert, ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 import { useAuth } from '@/store/AuthContext';
-import { VitalsService } from '@/services/vitalsService';
+import { NotAuthenticatedError, addVitalReading } from '@/services/vitalsService';
 import { useTheme } from '@/hooks/use-theme';
 
 export default function VitalsEntryScreen() {
@@ -17,22 +17,26 @@ export default function VitalsEntryScreen() {
   const [bloodSugar, setBloodSugar] = useState('');
   const [heartRate, setHeartRate] = useState('');
   const [weight, setWeight] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   const handleSave = async () => {
-    if (!user) return;
+    if (!user) {
+      Alert.alert('Sign in required', 'Please sign in to save your vitals.');
+      return;
+    }
 
     if (!bpSys && !bpDia && !bloodSugar && !heartRate && !weight) {
       Alert.alert('Missing Entry', 'Please fill in at least one vital sign reading before saving.');
       return;
     }
 
+    setIsSaving(true);
     try {
-      await VitalsService.addVital(user, {
-        date: new Date().toISOString(),
-        bloodPressureSys: bpSys ? parseInt(bpSys) : undefined,
-        bloodPressureDia: bpDia ? parseInt(bpDia) : undefined,
-        bloodSugar: bloodSugar ? parseInt(bloodSugar) : undefined,
-        heartRate: heartRate ? parseInt(heartRate) : undefined,
+      await addVitalReading({
+        systolic: bpSys ? parseInt(bpSys, 10) : undefined,
+        diastolic: bpDia ? parseInt(bpDia, 10) : undefined,
+        bloodSugar: bloodSugar ? parseInt(bloodSugar, 10) : undefined,
+        heartRate: heartRate ? parseInt(heartRate, 10) : undefined,
         weight: weight ? parseFloat(weight) : undefined,
       });
 
@@ -40,7 +44,21 @@ export default function VitalsEntryScreen() {
         { text: 'OK', onPress: () => router.back() }
       ]);
     } catch (e) {
-      Alert.alert('Save Error', 'Could not save your vitals log. Please try again.');
+      const firebaseError = e as { code?: string; message?: string };
+      console.error('[VitalsEntry] save failed', {
+        errorCode: firebaseError.code ?? '(none)',
+        errorMessage: firebaseError.message ?? String(e),
+        uid: user,
+      });
+      const message =
+        e instanceof NotAuthenticatedError
+          ? e.message
+          : firebaseError.message
+            ? `${firebaseError.code ?? 'unknown'}: ${firebaseError.message}`
+            : 'Could not save your vitals log. Please check your connection and try again.';
+      Alert.alert('Save Error', message);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -161,12 +179,17 @@ export default function VitalsEntryScreen() {
 
         {/* Save Button */}
         <TouchableOpacity 
-          style={[styles.saveButton, { backgroundColor: colors.primary }]} 
+          style={[styles.saveButton, { backgroundColor: colors.primary, opacity: isSaving ? 0.7 : 1 }]} 
           onPress={handleSave}
           activeOpacity={0.8}
+          disabled={isSaving}
         >
-          <Ionicons name="checkmark" size={24} color="#FFFFFF" style={{ marginRight: 8 }} />
-          <Text style={styles.saveButtonText}>Save Vitals Log</Text>
+          {isSaving ? (
+            <ActivityIndicator color="#FFFFFF" style={{ marginRight: 8 }} />
+          ) : (
+            <Ionicons name="checkmark" size={24} color="#FFFFFF" style={{ marginRight: 8 }} />
+          )}
+          <Text style={styles.saveButtonText}>{isSaving ? 'Saving...' : 'Save Vitals Log'}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity 

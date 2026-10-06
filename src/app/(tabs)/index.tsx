@@ -128,13 +128,17 @@ export default function HomeScreen() {
 
   const loadData = async () => {
     if (user) {
-      const vitals = await VitalsService.getVitals(user);
-      if (vitals.length > 0) {
-        const sorted = vitals.sort(
-          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-        );
-        setLatestVitals(sorted[0]);
-      } else {
+      try {
+        const vitals = await VitalsService.getVitalHistory();
+        if (vitals.length > 0) {
+          const sorted = vitals.sort(
+            (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+          );
+          setLatestVitals(sorted[0]);
+        } else {
+          setLatestVitals(null);
+        }
+      } catch {
         setLatestVitals(null);
       }
       const p = await VitalsService.getUserProfile(user);
