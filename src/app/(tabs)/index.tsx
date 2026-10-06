@@ -240,9 +240,14 @@ export default function HomeScreen() {
             <Text style={[styles.sectionTitle, { color: colors.text }]}>Today's Overview</Text>
             <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>Key health markers</Text>
           </View>
-          <TouchableOpacity onPress={() => router.push('/vitals-history')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={[styles.viewHistoryLink, { color: colors.primary }]}>View History →</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 12 }}>
+            <TouchableOpacity onPress={() => router.push('/bp-analytics')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={[styles.viewHistoryLink, { color: colors.bp }]}>BP Analytics</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push('/vitals-history')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={[styles.viewHistoryLink, { color: colors.primary }]}>History →</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Vitals Grid */}

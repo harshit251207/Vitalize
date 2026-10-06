@@ -10,6 +10,7 @@ import {
   query,
   serverTimestamp,
   updateDoc,
+  where,
 } from 'firebase/firestore';
 import { Vitals, UserProfile, DEFAULT_RANGES } from '@/types';
 import { auth, db } from '@/services/firebase';
@@ -162,6 +163,30 @@ export async function getVitalHistory(): Promise<Vitals[]> {
   const uid = requireCurrentUid();
   const snapshot = await getDocs(
     query(vitalsCollection(uid), orderBy('recordedAt', 'asc'))
+  );
+
+  return snapshot.docs.map((snap) =>
+    mapFirestoreDocToVitals(snap.id, snap.data() as Record<string, unknown>)
+  );
+}
+
+/**
+ * Returns the signed-in user's vitals recorded within the last `days` days,
+ * ordered oldest → newest. Uses a server-side `where` clause on `recordedAt`
+ * to avoid downloading the entire vitals history.
+ */
+export async function getVitalHistoryForPeriod(days: number): Promise<Vitals[]> {
+  const uid = requireCurrentUid();
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const cutoffTimestamp = Timestamp.fromDate(cutoff);
+
+  const snapshot = await getDocs(
+    query(
+      vitalsCollection(uid),
+      where('recordedAt', '>=', cutoffTimestamp),
+      orderBy('recordedAt', 'asc'),
+    )
   );
 
   return snapshot.docs.map((snap) =>
