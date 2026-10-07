@@ -29,10 +29,17 @@ export function BotMessage({ reply, timestamp }: BotMessageProps) {
   const vitalsNote = reply.vitals_note.trim();
   const dietTip = reply.diet_tip.trim();
   const motivation = reply.motivation.trim();
+  const hasContent = !!(intro || workout.length || vitalsNote || dietTip || motivation);
 
   return (
     <View style={styles.wrap}>
-      {!!intro && <Text style={[styles.intro, { color: textColor }]}>{intro}</Text>}
+      {hasContent ? (
+        !!intro && <Text style={[styles.intro, { color: textColor }]}>{intro}</Text>
+      ) : (
+        <Text style={[styles.intro, { color: textColor }]}>
+          I couldn't generate a readable reply. Please try again.
+        </Text>
+      )}
 
       {workout.length > 0 && (
         <View style={[styles.card, { backgroundColor: cardBg, borderColor: border }]}>

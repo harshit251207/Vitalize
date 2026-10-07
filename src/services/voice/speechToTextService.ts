@@ -8,10 +8,12 @@ import {
 } from 'expo-audio';
 import {
   AI_ENDPOINTS,
+  AI_REQUEST_TIMEOUT_MS,
   GROQ_WHISPER_MODEL,
   VOICE_LANGUAGE,
   getGroqApiKey,
 } from '@/config/ai';
+import { fetchWithTimeout } from '@/services/ai/http';
 
 export type VoiceState =
   | 'idle'
@@ -294,13 +296,17 @@ class SpeechToTextService {
       'Hindi, Hinglish, and English healthcare transcription: Mera BP check karo, 7 din ka trend, aaj ka workout, exercises, vitals'
     );
 
-    const response = await fetch(AI_ENDPOINTS.groqWhisper, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
+    const response = await fetchWithTimeout(
+      AI_ENDPOINTS.groqWhisper,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: formData,
       },
-      body: formData,
-    });
+      AI_REQUEST_TIMEOUT_MS
+    );
 
     const data = await response.json().catch(() => ({}));
 

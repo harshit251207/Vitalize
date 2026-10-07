@@ -96,6 +96,7 @@ export default function ChatScreen() {
   }, [errorMessage]);
 
   const msgIdCounter = useRef(0);
+  const inFlightRef = useRef(false);
 
   const getNextId = (prefix: string) => {
     msgIdCounter.current += 1;
@@ -104,7 +105,7 @@ export default function ChatScreen() {
 
   const handleSendMessage = async (textToSend?: string, wasSpoken: boolean = false) => {
     const text = (textToSend ?? inputText).trim();
-    if (!text || isProcessingAI) return;
+    if (!text || inFlightRef.current) return;
 
     const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -119,10 +120,10 @@ export default function ChatScreen() {
     setMessages((prev) => [...prev, userMsg]);
     setInputText('');
     setErrorMessage(null);
+    inFlightRef.current = true;
     setIsProcessingAI(true);
 
     try {
-      // UNIFIED PIPELINE: Both voice transcripts and typed text pass into the same agent
       const agentResult = await processAgentMessage(text, user);
 
       const aiMsg: ChatMessage = {
@@ -143,18 +144,16 @@ export default function ChatScreen() {
       };
       setMessages((prev) => [...prev, fallbackMsg]);
     } finally {
+      inFlightRef.current = false;
       setIsProcessingAI(false);
     }
   };
 
-  /**
-   * Option A Transcript UX:
-   * Places transcript into text input and allows user to review/edit,
-   * with automatic focus so they can send or adjust health terms immediately.
-   */
   const handleVoiceTranscript = (transcript: string) => {
-    setInputText(transcript);
+    const spoken = transcript.trim();
+    if (!spoken) return;
     setErrorMessage(null);
+    void handleSendMessage(spoken, true);
   };
 
   const handleVoiceError = (errorMsg: string) => {

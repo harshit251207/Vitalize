@@ -1,4 +1,5 @@
-import { GEMINI_MODEL, AI_ENDPOINTS, getGeminiApiKey } from '@/config/ai';
+import { GEMINI_MODEL, AI_ENDPOINTS, AI_REQUEST_TIMEOUT_MS, getGeminiApiKey } from '@/config/ai';
+import { fetchWithTimeout } from './http';
 
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
@@ -7,10 +8,12 @@ export interface ChatMessage {
 
 export class GeminiError extends Error {
   statusCode?: number;
-  constructor(message: string, statusCode?: number) {
+  permanent?: boolean;
+  constructor(message: string, statusCode?: number, permanent?: boolean) {
     super(message);
     this.name = 'GeminiError';
     this.statusCode = statusCode;
+    this.permanent = permanent;
   }
 }
 
@@ -51,6 +54,10 @@ type GeminiCallResult = {
   finishReason?: string;
 };
 
+function isProjectAccessDenied(status: number, message: string): boolean {
+  return status === 403 || /denied access|permission_denied|PERMISSION_DENIED/i.test(message);
+}
+
 function extractCandidateText(data: unknown): GeminiCallResult {
   const candidate = (
     data as {
@@ -72,26 +79,27 @@ function extractCandidateText(data: unknown): GeminiCallResult {
   return { text, finishReason };
 }
 
-async function requestGemini(
+/**
+ * Single Gemini generateContent call. No model cycling and no retries.
+ * 403 project-denial is marked permanent so the app can skip Gemini afterward.
+ */
+export async function callGemini(
   userPrompt: string,
-  systemInstruction: string | undefined,
-  options: GeminiCallOptions | undefined,
-  maxOutputTokens: number
-): Promise<GeminiCallResult> {
+  systemInstruction?: string,
+  options?: GeminiCallOptions
+): Promise<string> {
   const apiKey = getGeminiApiKey();
 
-  if (!apiKey || apiKey === 'YOUR_GEMINI_API_KEY') {
-    throw new GeminiError('Gemini API key is not configured.', 401);
+  if (!apiKey) {
+    throw new GeminiError('Gemini API key is not configured.', 401, true);
   }
 
   const endpoint = AI_ENDPOINTS.gemini(GEMINI_MODEL, apiKey);
+  const maxOutputTokens = Math.max(options?.maxOutputTokens ?? 2048, 1024);
 
   const generationConfig: Record<string, unknown> = {
     temperature: 0.4,
     maxOutputTokens,
-    thinkingConfig: {
-      thinkingBudget: 0,
-    },
   };
 
   if (options?.jsonSchema) {
@@ -115,69 +123,35 @@ async function requestGemini(
     };
   }
 
-  const post = async (body: Record<string, unknown>) => {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(
+      endpoint,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       },
-      body: JSON.stringify(body),
-    });
-    const data = await response.json().catch(() => ({}));
-    return { response, data };
-  };
+      AI_REQUEST_TIMEOUT_MS
+    );
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Network error calling Gemini.';
+    throw new GeminiError(message);
+  }
 
-  let { response, data } = await post(payload);
+  const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
     const errorMsg =
       (data as { error?: { message?: string } })?.error?.message ||
       `HTTP ${response.status} from Gemini`;
-    const thinkingRejected = /thinking/i.test(errorMsg) && !!generationConfig.thinkingConfig;
-    if (thinkingRejected) {
-      delete generationConfig.thinkingConfig;
-      payload.generationConfig = generationConfig;
-      ({ response, data } = await post(payload));
-    }
+    throw new GeminiError(errorMsg, response.status, isProjectAccessDenied(response.status, errorMsg));
   }
 
-  if (!response.ok) {
-    const errorMsg =
-      (data as { error?: { message?: string } })?.error?.message ||
-      `HTTP ${response.status} from Gemini`;
-    throw new GeminiError(errorMsg, response.status);
-  }
-
-  return extractCandidateText(data);
-}
-
-/**
- * Calls Google Gemini. JSON chat calls use a large output budget and
- * retry once on MAX_TOKENS so the object is not truncated.
- */
-export async function callGemini(
-  userPrompt: string,
-  systemInstruction?: string,
-  options?: GeminiCallOptions
-): Promise<string> {
-  const initialLimit = Math.max(options?.maxOutputTokens ?? 2048, 2048);
-  const first = await requestGemini(userPrompt, systemInstruction, options, initialLimit);
-
-  console.log('[Gemini] finishReason:', first.finishReason);
-
-  if (first.finishReason === 'MAX_TOKENS') {
-    const retryLimit = Math.max(initialLimit * 2, 4096);
-    const retry = await requestGemini(userPrompt, systemInstruction, options, retryLimit);
-    console.log('[Gemini] retry finishReason:', retry.finishReason);
-    if (!retry.text) {
-      throw new GeminiError('Empty response candidate returned by Gemini.');
-    }
-    return retry.text;
-  }
-
-  if (!first.text) {
+  const result = extractCandidateText(data);
+  if (!result.text) {
     throw new GeminiError('Empty response candidate returned by Gemini.');
   }
 
-  return first.text;
+  return result.text;
 }
