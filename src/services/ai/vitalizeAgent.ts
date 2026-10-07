@@ -1,7 +1,8 @@
 import { computeBPAnalytics, summarizeBPAnalytics } from '@/services/bpAnalyticsService';
-import { getVitalHistory, getVitalHistoryForPeriod, VitalsService } from '@/services/vitalsService';
+import { getVitalHistoryForPeriod, VitalsService } from '@/services/vitalsService';
 import { PlanService } from '@/services/planService';
-import { callGemini } from './geminiService';
+import { Vitals } from '@/types';
+import { callGemini, VITALIZE_CHAT_RESPONSE_SCHEMA } from './geminiService';
 import { callGroq } from './groqService';
 
 export type AgentIntent =
@@ -14,21 +15,50 @@ export type AgentIntent =
   | 'GET_WORKOUT_PROGRESS'
   | 'GENERAL_HEALTH_QUERY';
 
+export interface AgentWorkoutItem {
+  name: string;
+  reps_or_duration: string;
+}
+
+export interface BotReply {
+  intro: string;
+  workout: AgentWorkoutItem[];
+  vitals_note: string;
+  diet_tip: string;
+  motivation: string;
+}
+
+export type AgentMessagePayload = BotReply;
+
 export interface AgentResponse {
-  reply: string;
+  payload: BotReply;
   provider: 'gemini' | 'groq' | 'fallback';
   intent: AgentIntent;
   dataRetrieved?: boolean;
 }
 
+const EMPTY_REPLY: BotReply = {
+  intro: '',
+  workout: [],
+  vitals_note: '',
+  diet_tip: '',
+  motivation: '',
+};
+
+export function emptyBotReply(intro: string): BotReply {
+  return {
+    ...EMPTY_REPLY,
+    intro: stripMarkdownSymbols(intro).trim(),
+  };
+}
+
 /**
- * Classifies the user's natural language input into a specific intent/tool.
- * Works seamlessly across English, Hindi, and Hinglish.
+ * Classifies the user's natural language input so extra vitals/plan
+ * context can be attached. Does NOT choose a different reply format.
  */
 export function classifyIntent(text: string): AgentIntent {
   const lower = text.toLowerCase().trim();
 
-  // 30-day BP check
   if (
     lower.includes('30 din') ||
     lower.includes('30 days') ||
@@ -41,7 +71,6 @@ export function classifyIntent(text: string): AgentIntent {
     }
   }
 
-  // 7-day BP check
   if (
     lower.includes('7 din') ||
     lower.includes('7 days') ||
@@ -54,7 +83,6 @@ export function classifyIntent(text: string): AgentIntent {
     }
   }
 
-  // Latest BP reading
   if (
     (lower.includes('latest') || lower.includes('aakhri') || lower.includes('last') || lower.includes('recent')) &&
     (lower.includes('bp') || lower.includes('reading') || lower.includes('blood pressure'))
@@ -62,11 +90,11 @@ export function classifyIntent(text: string): AgentIntent {
     return 'GET_LATEST_BP';
   }
 
-  // General BP analysis
   if (
     lower.includes('bp') ||
     lower.includes('blood pressure') ||
-    lower.includes('bloodpressure')
+    lower.includes('bloodpressure') ||
+    lower.includes('schedule')
   ) {
     if (
       lower.includes('check') ||
@@ -74,13 +102,16 @@ export function classifyIntent(text: string): AgentIntent {
       lower.includes('trend') ||
       lower.includes('batao') ||
       lower.includes('dekho') ||
-      lower.includes('report')
+      lower.includes('report') ||
+      lower.includes('kaisa') ||
+      lower.includes('yesterday') ||
+      lower.includes('kal') ||
+      lower.includes('schedule')
     ) {
       return 'BP_ANALYSIS';
     }
   }
 
-  // Workout progress / yesterday's exercises
   if (
     (lower.includes('kal') || lower.includes('yesterday') || lower.includes('progress') || lower.includes('streak')) &&
     (lower.includes('exercise') || lower.includes('workout') || lower.includes('complete') || lower.includes('kitni'))
@@ -88,7 +119,6 @@ export function classifyIntent(text: string): AgentIntent {
     return 'GET_WORKOUT_PROGRESS';
   }
 
-  // Start workout
   if (
     (lower.includes('start') || lower.includes('shuru') || lower.includes('begin')) &&
     (lower.includes('workout') || lower.includes('exercise') || lower.includes('kasrat'))
@@ -96,7 +126,6 @@ export function classifyIntent(text: string): AgentIntent {
     return 'START_WORKOUT';
   }
 
-  // Today's workout
   if (
     lower.includes('workout') ||
     lower.includes('exercise') ||
@@ -117,158 +146,348 @@ export function classifyIntent(text: string): AgentIntent {
   return 'GENERAL_HEALTH_QUERY';
 }
 
+function todayDateStr(): string {
+  return new Date().toISOString().split('T')[0];
+}
+
+function yesterdayDateStr(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().split('T')[0];
+}
+
+function formatLatestVitals(vitals: Vitals[]): string {
+  if (vitals.length === 0) {
+    return 'No vitals logged yet.';
+  }
+
+  const newestFirst = [...vitals].reverse();
+  let bp: string | null = null;
+  let weight: string | null = null;
+  let sugar: string | null = null;
+
+  for (const v of newestFirst) {
+    if (
+      !bp &&
+      typeof v.bloodPressureSys === 'number' &&
+      typeof v.bloodPressureDia === 'number'
+    ) {
+      bp = `${v.bloodPressureSys}/${v.bloodPressureDia} mmHg (logged ${new Date(v.date).toLocaleDateString()})`;
+    }
+    if (!weight && typeof v.weight === 'number') {
+      weight = `${v.weight} kg (logged ${new Date(v.date).toLocaleDateString()})`;
+    }
+    if (!sugar && typeof v.bloodSugar === 'number') {
+      sugar = `${v.bloodSugar} (logged ${new Date(v.date).toLocaleDateString()})`;
+    }
+    if (bp && weight && sugar) break;
+  }
+
+  return [
+    `BP: ${bp ?? 'not recorded'}`,
+    `Weight: ${weight ?? 'not recorded'}`,
+    `Blood sugar: ${sugar ?? 'not recorded'}`,
+  ].join('\n');
+}
+
+function formatVitalsLog(vitals: Vitals[]): string {
+  if (vitals.length === 0) {
+    return 'No readings in this period.';
+  }
+
+  return vitals
+    .map((v) => {
+      const when = new Date(v.date).toLocaleString();
+      const bits: string[] = [];
+      if (typeof v.bloodPressureSys === 'number' && typeof v.bloodPressureDia === 'number') {
+        bits.push(`BP ${v.bloodPressureSys}/${v.bloodPressureDia}`);
+      }
+      if (typeof v.weight === 'number') bits.push(`weight ${v.weight} kg`);
+      if (typeof v.bloodSugar === 'number') bits.push(`sugar ${v.bloodSugar}`);
+      if (typeof v.heartRate === 'number') bits.push(`HR ${v.heartRate}`);
+      return `${when}: ${bits.length ? bits.join(', ') : 'logged, no numeric fields'}`;
+    })
+    .join('\n');
+}
+
+function vitalsOnLocalDate(vitals: Vitals[], ymd: string): Vitals[] {
+  return vitals.filter((v) => v.date.slice(0, 10) === ymd || new Date(v.date).toISOString().slice(0, 10) === ymd);
+}
+
 /**
- * Health Data Minimization Helper:
- * Fetches only the strictly required, structured data based on the detected intent.
- * NEVER exposes Firebase UIDs, auth tokens, emails, full database dumps, or raw OCR files.
+ * Always-on grounding for every chat turn.
  */
-async function retrieveMinimalContext(
+async function retrieveGroundingContext(userUid?: string | null): Promise<{
+  text: string;
+  hasPlan: boolean;
+}> {
+  if (!userUid) {
+    return {
+      text: 'User is not currently signed in. No personal plan or vitals available.',
+      hasPlan: false,
+    };
+  }
+
+  const sections: string[] = [];
+  let hasPlan = false;
+  const todayStr = todayDateStr();
+  const yesterdayStr = yesterdayDateStr();
+
+  try {
+    const profile = await VitalsService.getUserProfile(userUid);
+    const category = profile.disabilityCategory || 'not set';
+    sections.push(`Detected disability category: ${category}`);
+    sections.push('The user is a wheelchair user.');
+
+    if (profile.disabilityCategory) {
+      const plan = PlanService.getPlanForCategory(profile.disabilityCategory);
+      if (plan && plan.exercises.length > 0) {
+        hasPlan = true;
+        const exerciseList = plan.exercises
+          .map((e, i) => `${i + 1}. ${e.name} — ${e.reps}`)
+          .join('\n');
+        sections.push(`PROVIDED WORKOUT PLAN (the only allowed exercises):\n${exerciseList}`);
+        sections.push(`PROVIDED DIET PLAN:\n${plan.diet}`);
+      } else {
+        sections.push('No labeled workout/diet plan is configured for this category yet.');
+      }
+
+      const completedToday = await PlanService.getCompletedExercises(userUid, todayStr);
+      const completedYesterday = await PlanService.getCompletedExercises(userUid, yesterdayStr);
+      const nameById = new Map((plan?.exercises ?? []).map((e) => [e.id, e.name]));
+      const names = (ids: string[]) => ids.map((id) => nameById.get(id) || id);
+      const total = plan?.exercises.length ?? 0;
+      sections.push(
+        `Today's exercise completion (${todayStr}): ${completedToday.length}/${total}` +
+          (completedToday.length ? ` — ${names(completedToday).join(', ')}` : '')
+      );
+      sections.push(
+        `Yesterday's exercise completion (${yesterdayStr}): ${completedYesterday.length}/${total}` +
+          (completedYesterday.length ? ` — ${names(completedYesterday).join(', ')}` : '')
+      );
+    }
+  } catch (error) {
+    console.warn('[VitalizeAgent] Error fetching plan/profile grounding:', error);
+    sections.push('Unable to load disability category or plan right now.');
+  }
+
+  try {
+    const weekVitals = await getVitalHistoryForPeriod(7);
+    sections.push(`Latest vitals:\n${formatLatestVitals(weekVitals)}`);
+    sections.push(`Last 7 days vitals / BP schedule:\n${formatVitalsLog(weekVitals)}`);
+    const yesterdayVitals = vitalsOnLocalDate(weekVitals, yesterdayStr);
+    sections.push(
+      `Yesterday's vitals (${yesterdayStr}):\n${
+        yesterdayVitals.length ? formatVitalsLog(yesterdayVitals) : 'No readings logged yesterday.'
+      }`
+    );
+  } catch (error) {
+    console.warn('[VitalizeAgent] Error fetching vitals grounding:', error);
+    sections.push('Latest vitals: unavailable.');
+  }
+
+  return { text: sections.join('\n\n'), hasPlan };
+}
+
+async function retrieveExtraIntentContext(
   intent: AgentIntent,
   userUid?: string | null
 ): Promise<{ contextSummary: string; hasData: boolean }> {
   if (!userUid) {
-    return {
-      contextSummary: 'User is not currently signed in or viewing as guest.',
-      hasData: false,
-    };
+    return { contextSummary: '', hasData: false };
   }
 
   try {
-    switch (intent) {
-      case 'BP_ANALYTICS_7D': {
-        const vitals = await getVitalHistoryForPeriod(7);
-        const analytics = computeBPAnalytics(vitals, '7d');
-        const summary = summarizeBPAnalytics(analytics);
-        return {
-          contextSummary: `User's 7-Day BP Analytics Summary:\n${summary}`,
-          hasData: analytics.readingCount > 0,
-        };
-      }
-
-      case 'BP_ANALYTICS_30D': {
-        const vitals = await getVitalHistoryForPeriod(30);
-        const analytics = computeBPAnalytics(vitals, '30d');
-        const summary = summarizeBPAnalytics(analytics);
-        return {
-          contextSummary: `User's 30-Day BP Analytics Summary:\n${summary}`,
-          hasData: analytics.readingCount > 0,
-        };
-      }
-
-      case 'BP_ANALYSIS': {
-        const vitals = await getVitalHistoryForPeriod(7);
-        const analytics = computeBPAnalytics(vitals, '7d');
-        const summary = summarizeBPAnalytics(analytics);
-        return {
-          contextSummary: `User's Recent BP Overview:\n${summary}`,
-          hasData: analytics.readingCount > 0,
-        };
-      }
-
-      case 'GET_LATEST_BP': {
-        const vitals = await getVitalHistory();
-        const bpVitals = vitals.filter(
-          (v) => typeof v.bloodPressureSys === 'number' && typeof v.bloodPressureDia === 'number'
-        );
-        if (bpVitals.length === 0) {
-          return {
-            contextSummary: 'No blood pressure readings have been logged yet.',
-            hasData: false,
-          };
-        }
-        const latest = bpVitals[bpVitals.length - 1];
-        return {
-          contextSummary: `Latest recorded BP reading: ${latest.bloodPressureSys}/${latest.bloodPressureDia} mmHg (Logged on ${new Date(latest.date).toLocaleDateString()}).`,
-          hasData: true,
-        };
-      }
-
-      case 'GET_TODAY_WORKOUT':
-      case 'START_WORKOUT': {
-        const profile = await VitalsService.getUserProfile(userUid);
-        const category = profile.disabilityCategory;
-        if (!category) {
-          return {
-            contextSummary: 'The user has not yet set their mobility/disability category.',
-            hasData: false,
-          };
-        }
-        const plan = PlanService.getPlanForCategory(category);
-        if (!plan || plan.exercises.length === 0) {
-          return {
-            contextSummary: `Plan category is "${category}", but no specific exercises are configured.`,
-            hasData: false,
-          };
-        }
-        const exerciseList = plan.exercises.map((e, i) => `${i + 1}. ${e.name} (${e.reps})`).join('\n');
-        return {
-          contextSummary: `Today's customized workout routine for ${category}:\n${exerciseList}\nDiet focus: ${plan.diet}`,
-          hasData: true,
-        };
-      }
-
-      case 'GET_WORKOUT_PROGRESS': {
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayStr = yesterday.toISOString().split('T')[0];
-        const completedYesterday = await PlanService.getCompletedExercises(userUid, yesterdayStr);
-        const streak = await PlanService.getStreak(userUid);
-
-        return {
-          contextSummary: `Workout progress:
-- Exercises completed yesterday (${yesterdayStr}): ${completedYesterday.length}
-- Current daily workout streak: ${streak} day(s)`,
-          hasData: true,
-        };
-      }
-
-      case 'GENERAL_HEALTH_QUERY':
-      default:
-        return { contextSummary: '', hasData: false };
+    if (intent === 'BP_ANALYTICS_30D') {
+      const vitals = await getVitalHistoryForPeriod(30);
+      const analytics = computeBPAnalytics(vitals, '30d');
+      return {
+        contextSummary: `User's 30-Day BP Analytics Summary:\n${summarizeBPAnalytics(analytics)}`,
+        hasData: analytics.readingCount > 0,
+      };
     }
+
+    if (intent === 'BP_ANALYTICS_7D' || intent === 'BP_ANALYSIS' || intent === 'GET_LATEST_BP') {
+      const vitals = await getVitalHistoryForPeriod(7);
+      const analytics = computeBPAnalytics(vitals, '7d');
+      return {
+        contextSummary: `User's Recent BP Overview:\n${summarizeBPAnalytics(analytics)}`,
+        hasData: analytics.readingCount > 0,
+      };
+    }
+
+    if (intent === 'GET_WORKOUT_PROGRESS') {
+      const streak = await PlanService.getStreak(userUid);
+      return {
+        contextSummary: `Current daily workout streak: ${streak} day(s)`,
+        hasData: true,
+      };
+    }
+
+    return { contextSummary: '', hasData: false };
   } catch (error) {
-    console.warn('[VitalizeAgent] Error fetching minimal context:', error);
+    console.warn('[VitalizeAgent] Error fetching extra intent context:', error);
     return {
-      contextSummary: 'Unable to access local health records right now.',
+      contextSummary: 'Unable to access extra health records right now.',
       hasData: false,
     };
   }
 }
 
-const SYSTEM_INSTRUCTION = `You are Vitalize AI, an empathetic, supportive, and knowledgeable personal health assistant designed specifically for Vitalize users, including individuals with mobility challenges and disabilities.
+function buildSystemInstruction(grounding: string): string {
+  return `You are Vitalize AI, a casual Hinglish health companion.
 
-CRITICAL INSTRUCTIONS:
-1. Language Fluency:
-   - Understand English, Hindi, and Hinglish naturally.
-   - Match the user's language style: If they speak Hindi or Hinglish (e.g. "Mera BP trend batao"), respond warmly in natural Hindi/Hinglish (e.g. "Aapka 7 din ka average BP 124/82 mmHg raha hai...").
-   - If they speak English, respond in clear, empathetic English.
+Always fill the schema. If a field is not relevant to the question, return an empty string or empty array. Never reply outside the JSON. Short Hinglish, max ~100 words total.
 
-2. Health Context Usage:
-   - When structured health/BP/workout data is provided below, base your answer directly on that real data.
-   - If no readings are logged, politely explain that no readings exist yet and invite the user to log their readings in Vitalize.
-   - Do NOT invent or hallucinate fake numbers.
+OUTPUT (JSON only, every field required):
+{
+  "intro": string,
+  "workout": [ { "name": string, "reps_or_duration": string } ],
+  "vitals_note": string,
+  "diet_tip": string,
+  "motivation": string
+}
 
-3. Health & Safety:
-   - Always keep responses positive, encouraging, and clear.
-   - Remind the user gently when discussing blood pressure that Vitalize provides health insights for informational guidance, not a medical diagnosis, and to consult their doctor or healthcare provider for clinical medical advice.
-   - Keep answers concise, readable, and structured with bullet points where appropriate.`;
+FIELD RULES:
+- intro: 1 short line answering the question.
+- workout: only exercises from the PROVIDED PLAN. Empty array [] if the question is not about today's workout.
+- vitals_note: BP / weight / sugar / yesterday schedule. Empty string if not asked.
+- diet_tip: empty string if not about food/diet.
+- motivation: one short line, or empty string.
+
+GROUNDING / SAFETY:
+- Only suggest exercises from the provided plan. Never invent new exercises.
+- The user is a wheelchair user, so do not suggest standing, walking, or gait exercises unless they are in the provided plan.
+- If asked something outside the plan, say to consult their doctor (in intro).
+- Use latest vitals and completion data. Do not invent numbers.
+- Vitalize is informational, not a diagnosis.
+
+USER CONTEXT:
+${grounding}`;
+}
+
+export function stripMarkdownSymbols(text: string): string {
+  return text.replace(/\*\*/g, '').replace(/^\s*\*\s+/gm, '');
+}
+
+function stripJsonFences(raw: string): string {
+  const trimmed = raw.trim();
+  const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  return fence ? fence[1].trim() : trimmed;
+}
+
+function repairTruncatedJson(raw: string): string {
+  let s = raw.trim();
+  const start = s.indexOf('{');
+  if (start === -1) return s;
+  s = s.slice(start);
+
+  let braces = 0;
+  let brackets = 0;
+  let inString = false;
+  let escape = false;
+
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inString) {
+      if (escape) {
+        escape = false;
+        continue;
+      }
+      if (ch === '\\') {
+        escape = true;
+        continue;
+      }
+      if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === '{') braces += 1;
+    else if (ch === '}') braces -= 1;
+    else if (ch === '[') brackets += 1;
+    else if (ch === ']') brackets -= 1;
+  }
+
+  if (inString) s += '"';
+  while (brackets > 0) {
+    s += ']';
+    brackets -= 1;
+  }
+  while (braces > 0) {
+    s += '}';
+    braces -= 1;
+  }
+  return s;
+}
+
+function normalizeBotReply(parsed: unknown): BotReply | null {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return null;
+  }
+
+  const o = parsed as Record<string, unknown>;
+  const workout = Array.isArray(o.workout)
+    ? o.workout
+        .filter((w): w is Record<string, unknown> => !!w && typeof w === 'object')
+        .map((w) => ({
+          name: stripMarkdownSymbols(String(w.name ?? '')).trim(),
+          reps_or_duration: stripMarkdownSymbols(String(w.reps_or_duration ?? '')).trim(),
+        }))
+        .filter((w) => w.name.length > 0)
+    : [];
+
+  return {
+    intro: stripMarkdownSymbols(String(o.intro ?? '')).trim(),
+    workout,
+    vitals_note: stripMarkdownSymbols(String(o.vitals_note ?? '')).trim(),
+    diet_tip: stripMarkdownSymbols(String(o.diet_tip ?? '')).trim(),
+    motivation: stripMarkdownSymbols(String(o.motivation ?? '')).trim(),
+  };
+}
+
+function tryParseObject(raw: string): BotReply | null {
+  try {
+    return normalizeBotReply(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Single parser for every chat reply. Always returns the same object shape.
+ */
+export function parseBotReply(raw: string): BotReply {
+  const fallbackIntro = stripMarkdownSymbols(raw).trim();
+
+  const parsedDirect = tryParseObject(raw.trim());
+  if (parsedDirect) return parsedDirect;
+
+  const unfenced = stripJsonFences(raw);
+  const parsedFenced = tryParseObject(unfenced);
+  if (parsedFenced) return parsedFenced;
+
+  const fromBrace = unfenced.indexOf('{') >= 0 ? unfenced.slice(unfenced.indexOf('{')) : unfenced;
+  const parsedSlice = tryParseObject(fromBrace);
+  if (parsedSlice) return parsedSlice;
+
+  const repaired = tryParseObject(repairTruncatedJson(fromBrace));
+  if (repaired) return repaired;
+
+  return emptyBotReply(fallbackIntro);
+}
+
+/** @deprecated Use parseBotReply */
+export function parseAgentReply(raw: string): { text: string; payload: BotReply } {
+  const payload = parseBotReply(raw);
+  return { text: payload.intro, payload };
+}
 
 /**
  * The Central AI Agent Entrypoint.
- *
- * ARCHITECTURAL RULE:
- * Voice and Typed messages BOTH call this SAME function.
- *
- * Flow:
- * Intent / Tool Resolution
- *    ↓
- * Minimal Structured Data Retrieval (Health Data Minimization)
- *    ↓
- * Call Gemini (Primary)
- *    ↓
- * If Gemini fails → Groq Fallback (1 attempt)
- *    ↓
- * Return unified response to Chat UI
+ * Voice and typed messages BOTH call this SAME function and the SAME Gemini JSON schema.
  */
 export async function processAgentMessage(
   userText: string,
@@ -277,33 +496,35 @@ export async function processAgentMessage(
   const trimmed = userText.trim();
   if (!trimmed) {
     return {
-      reply: 'Please provide a message or voice recording.',
+      payload: emptyBotReply('Please provide a message or voice recording.'),
       provider: 'fallback',
       intent: 'GENERAL_HEALTH_QUERY',
       dataRetrieved: false,
     };
   }
 
-  // 1. Intent / Tool identification
   const intent = classifyIntent(trimmed);
+  const grounding = await retrieveGroundingContext(userUid);
+  const extra = await retrieveExtraIntentContext(intent, userUid);
+  const systemInstruction = buildSystemInstruction(grounding.text);
 
-  // 2. Health Data Minimization (only fetch strictly necessary data)
-  const { contextSummary, hasData } = await retrieveMinimalContext(intent, userUid);
-
-  // 3. Assemble prompt with minimized context
   let finalPrompt = trimmed;
-  if (contextSummary) {
-    finalPrompt = `${trimmed}\n\n[CONFIDENTIAL MINIMIZED HEALTH CONTEXT]:\n${contextSummary}`;
+  if (extra.contextSummary) {
+    finalPrompt = `${trimmed}\n\n[EXTRA INTENT DATA]:\n${extra.contextSummary}`;
   }
 
-  // 4. Primary Provider: Gemini
+  const jsonOptions = {
+    jsonSchema: VITALIZE_CHAT_RESPONSE_SCHEMA as unknown as Record<string, unknown>,
+    maxOutputTokens: 2048,
+  };
+
   try {
-    const geminiReply = await callGemini(finalPrompt, SYSTEM_INSTRUCTION);
+    const geminiReply = await callGemini(finalPrompt, systemInstruction, jsonOptions);
     return {
-      reply: geminiReply,
+      payload: parseBotReply(geminiReply),
       provider: 'gemini',
       intent,
-      dataRetrieved: hasData,
+      dataRetrieved: extra.hasData || grounding.hasPlan,
     };
   } catch (geminiError: any) {
     const status = geminiError?.statusCode ? ` (HTTP ${geminiError.statusCode})` : '';
@@ -312,14 +533,13 @@ export async function processAgentMessage(
       geminiError?.message || geminiError
     );
 
-    // 5. Fallback Provider: Groq (attempted exactly once)
     try {
-      const groqReply = await callGroq(finalPrompt, SYSTEM_INSTRUCTION);
+      const groqReply = await callGroq(finalPrompt, systemInstruction, { jsonMode: true });
       return {
-        reply: groqReply,
+        payload: parseBotReply(groqReply),
         provider: 'groq',
         intent,
-        dataRetrieved: hasData,
+        dataRetrieved: extra.hasData || grounding.hasPlan,
       };
     } catch (groqError: any) {
       const groqStatus = groqError?.statusCode ? ` (HTTP ${groqError.statusCode})` : '';
@@ -328,12 +548,11 @@ export async function processAgentMessage(
         groqError?.message || groqError
       );
 
-      // 6. Graceful failure when both providers fail
       return {
-        reply: "I'm having trouble connecting right now. Please try again.",
+        payload: emptyBotReply("I'm having trouble connecting right now. Please try again."),
         provider: 'fallback',
         intent,
-        dataRetrieved: hasData,
+        dataRetrieved: extra.hasData || grounding.hasPlan,
       };
     }
   }

@@ -11,13 +11,15 @@ import {
   ActivityIndicator,
   Animated,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/store/AuthContext';
 import { useTheme } from '@/hooks/use-theme';
-import { processAgentMessage } from '@/services/ai/vitalizeAgent';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { processAgentMessage, emptyBotReply, type BotReply } from '@/services/ai/vitalizeAgent';
 import { VoiceInputButton } from '@/components/chat/VoiceInputButton';
+import { BotMessage } from '@/components/chat/BotMessage';
 import {
   speechToTextService,
   VoiceState,
@@ -26,7 +28,8 @@ import {
 interface ChatMessage {
   id: string;
   sender: 'user' | 'assistant';
-  text: string;
+  text?: string;
+  payload?: BotReply;
   timestamp: string;
   isVoice?: boolean;
 }
@@ -42,7 +45,10 @@ const QUICK_SUGGESTIONS = [
 export default function ChatScreen() {
   const router = useRouter();
   const colors = useTheme();
+  const scheme = useColorScheme();
+  const insets = useSafeAreaInsets();
   const { user } = useAuth();
+  const chatBg = scheme === 'light' ? colors.background : '#0B1220';
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
@@ -122,7 +128,7 @@ export default function ChatScreen() {
       const aiMsg: ChatMessage = {
         id: getNextId('ai'),
         sender: 'assistant',
-        text: agentResult.reply,
+        payload: agentResult.payload,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
 
@@ -132,7 +138,7 @@ export default function ChatScreen() {
       const fallbackMsg: ChatMessage = {
         id: getNextId('ai-err'),
         sender: 'assistant',
-        text: "I'm having trouble connecting right now. Please try again.",
+        payload: emptyBotReply("I'm having trouble connecting right now. Please try again."),
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
       setMessages((prev) => [...prev, fallbackMsg]);
@@ -162,13 +168,13 @@ export default function ChatScreen() {
 
   return (
     <SafeAreaView
-      style={[styles.safeArea, { backgroundColor: colors.background }]}
+      style={[styles.safeArea, { backgroundColor: chatBg }]}
       edges={['top', 'left', 'right']}
     >
       <KeyboardAvoidingView
         style={styles.container}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 12 : 0}
+        behavior="padding"
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
       >
         {/* Header */}
         <View
@@ -256,7 +262,35 @@ export default function ChatScreen() {
             data={messages}
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.messagesList}
+            extraData={isProcessingAI}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
             onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+            onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
+            ListFooterComponent={
+              isProcessingAI ? (
+                <View style={styles.thinkingContainer}>
+                  <View style={[styles.avatarCircle, { backgroundColor: colors.primary + '20' }]}>
+                    <Ionicons name="sparkles" size={14} color={colors.primary} />
+                  </View>
+                  <View
+                    style={[
+                      styles.thinkingBubble,
+                      {
+                        backgroundColor: scheme === 'light' ? colors.backgroundElement : '#1A2436',
+                        borderColor: colors.border,
+                      },
+                    ]}
+                  >
+                    <ActivityIndicator size="small" color={colors.primary} style={{ marginRight: 8 }} />
+                    <Text style={[styles.thinkingText, { color: colors.textSecondary }]}>
+                      Vitalize AI is thinking...
+                    </Text>
+                  </View>
+                </View>
+              ) : null
+            }
             renderItem={({ item }) => {
               const isUser = item.sender === 'user';
               return (
@@ -271,72 +305,39 @@ export default function ChatScreen() {
                       <Ionicons name="sparkles" size={14} color={colors.primary} />
                     </View>
                   )}
-                  <View
-                    style={[
-                      styles.bubble,
-                      isUser
-                        ? [styles.userBubble, { backgroundColor: colors.primary }]
-                        : [
-                            styles.assistantBubble,
-                            {
-                              backgroundColor: colors.backgroundElement,
-                              borderColor: colors.border,
-                            },
-                          ],
-                    ]}
-                  >
-                    {item.isVoice && isUser && (
-                      <View style={styles.voiceIndicatorRow}>
-                        <Ionicons name="mic" size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
-                        <Text style={styles.voiceIndicatorText}>Spoken</Text>
-                      </View>
-                    )}
-                    <Text
+                  {isUser ? (
+                    <View
                       style={[
-                        styles.bubbleText,
-                        { color: isUser ? '#FFFFFF' : colors.text },
+                        styles.bubble,
+                        styles.userBubble,
+                        { backgroundColor: colors.primary },
                       ]}
                     >
-                      {item.text}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.timestampText,
-                        {
-                          color: isUser ? 'rgba(255,255,255,0.7)' : colors.textSecondary,
-                        },
-                      ]}
-                    >
-                      {item.timestamp}
-                    </Text>
-                  </View>
+                      {item.isVoice && (
+                        <View style={styles.voiceIndicatorRow}>
+                          <Ionicons name="mic" size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
+                          <Text style={styles.voiceIndicatorText}>Spoken</Text>
+                        </View>
+                      )}
+                      <Text style={[styles.bubbleText, { color: '#FFFFFF' }]}>
+                        {item.text}
+                      </Text>
+                      <Text style={[styles.timestampText, { color: 'rgba(255,255,255,0.7)' }]}>
+                        {item.timestamp}
+                      </Text>
+                    </View>
+                  ) : (
+                    <View style={styles.assistantContent}>
+                      <BotMessage
+                        reply={item.payload ?? emptyBotReply('')}
+                        timestamp={item.timestamp}
+                      />
+                    </View>
+                  )}
                 </View>
               );
             }}
           />
-        )}
-
-        {/* AI Thinking Indicator */}
-        {isProcessingAI && (
-          <View style={styles.thinkingContainer}>
-            <View style={[styles.avatarCircle, { backgroundColor: colors.primary + '20' }]}>
-              <Ionicons name="sparkles" size={14} color={colors.primary} />
-            </View>
-            <View
-              style={[
-                styles.thinkingBubble,
-                {
-                  backgroundColor: colors.backgroundElement,
-                  borderColor: colors.border,
-                },
-              ]}
-            >
-              <ActivityIndicator size="small" color={colors.primary} style={{ marginRight: 8 }} />
-              <Text style={[styles.thinkingText, { color: colors.textSecondary }]}>
-                Vitalize AI is thinking...
-              </Text>
-            </View>
-          </View>
         )}
 
         {/* Listening Active Bar */}
@@ -383,8 +384,9 @@ export default function ChatScreen() {
           style={[
             styles.composerContainer,
             {
-              backgroundColor: colors.backgroundElement,
+              backgroundColor: scheme === 'light' ? colors.backgroundElement : '#1A2436',
               borderTopColor: colors.border,
+              paddingBottom: Math.max(8, insets.bottom),
             },
           ]}
         >
@@ -603,10 +605,14 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
+  assistantContent: {
+    flex: 1,
+    maxWidth: '88%',
+  },
   thinkingContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingTop: 4,
     paddingBottom: 8,
     gap: 8,
   },
