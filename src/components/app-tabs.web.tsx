@@ -15,25 +15,29 @@ import { ThemedView } from './themed-view';
 
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { FloatingChatButton } from './chat/FloatingChatButton';
 
 export default function AppTabs() {
   return (
-    <Tabs>
-      <TabSlot style={{ height: '100%' }} />
-      <TabList asChild>
-        <CustomTabList>
-          <TabTrigger name="home" href="/" asChild>
-            <TabButton>Home</TabButton>
-          </TabTrigger>
-          <TabTrigger name="plan" href="/plan" asChild>
-            <TabButton>My Plan</TabButton>
-          </TabTrigger>
-          <TabTrigger name="profile" href="/profile" asChild>
-            <TabButton>Profile</TabButton>
-          </TabTrigger>
-        </CustomTabList>
-      </TabList>
-    </Tabs>
+    <View style={{ flex: 1, width: '100%', height: '100%' }}>
+      <Tabs>
+        <TabSlot style={{ height: '100%' }} />
+        <TabList asChild>
+          <CustomTabList>
+            <TabTrigger name="home" href="/" asChild>
+              <TabButton>Home</TabButton>
+            </TabTrigger>
+            <TabTrigger name="plan" href="/plan" asChild>
+              <TabButton>My Plan</TabButton>
+            </TabTrigger>
+            <TabTrigger name="profile" href="/profile" asChild>
+              <TabButton>Profile</TabButton>
+            </TabTrigger>
+          </CustomTabList>
+        </TabList>
+      </Tabs>
+      <FloatingChatButton bottomInset={80} />
+    </View>
   );
 }
 

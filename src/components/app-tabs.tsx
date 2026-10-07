@@ -1,12 +1,15 @@
+import { View, StyleSheet } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/hooks/use-theme';
+import { FloatingChatButton } from '@/components/chat/FloatingChatButton';
 
 export default function AppTabs() {
   const colors = useTheme();
 
   return (
-    <Tabs
+    <View style={styles.container}>
+      <Tabs
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: colors.primary,
@@ -51,5 +54,13 @@ export default function AppTabs() {
         }} 
       />
     </Tabs>
+    <FloatingChatButton bottomInset={80} />
+  </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+});
