@@ -9,11 +9,9 @@ import {
 import {
   AI_ENDPOINTS,
   AI_REQUEST_TIMEOUT_MS,
-  GROQ_WHISPER_MODEL,
   VOICE_LANGUAGE,
   getGroqApiKey,
 } from '@/config/ai';
-import { fetchWithTimeout } from '@/services/ai/http';
 
 export type VoiceState =
   | 'idle'
@@ -161,6 +159,12 @@ class SpeechToTextService {
         throw new Error('Audio recording is not supported on this platform.');
       }
       const recorder = new AudioRecorderConstructor(RecordingPresets.HIGH_QUALITY);
+      if (typeof recorder.stopAndUnloadAsync !== 'function') {
+        recorder.stopAndUnloadAsync = async () => recorder.stop();
+      }
+      if (typeof recorder.getURI !== 'function') {
+        recorder.getURI = () => recorder.uri;
+      }
       await recorder.prepareToRecordAsync();
       recorder.record();
       this.activeRecorder = recorder;
@@ -204,12 +208,19 @@ class SpeechToTextService {
 
     // Finish Native Recorder if active
     if (this.activeRecorder) {
-      const recorder = this.activeRecorder;
+      const recording = this.activeRecorder;
       this.activeRecorder = null;
 
       try {
-        await recorder.stop();
-        const recordingUri = recorder.uri;
+        // Ensure recording is fully stopped and unloaded before reading getURI()
+        if (typeof recording.stopAndUnloadAsync === 'function') {
+          await recording.stopAndUnloadAsync();
+        } else if (typeof recording.stop === 'function') {
+          await recording.stop();
+        }
+
+        const recordingUri =
+          (typeof recording.getURI === 'function' ? recording.getURI() : null) || recording.uri;
 
         if (!recordingUri) {
           throw new VoiceRecognitionError(
@@ -256,7 +267,11 @@ class SpeechToTextService {
 
     if (this.activeRecorder) {
       try {
-        await this.activeRecorder.stop();
+        if (typeof this.activeRecorder.stopAndUnloadAsync === 'function') {
+          await this.activeRecorder.stopAndUnloadAsync();
+        } else if (typeof this.activeRecorder.stop === 'function') {
+          await this.activeRecorder.stop();
+        }
       } catch {}
       this.activeRecorder = null;
     }
@@ -265,10 +280,62 @@ class SpeechToTextService {
   }
 
   /**
-   * Sends audio to Groq Whisper API for high-accuracy multilingual transcription.
-   * Reliably handles Hindi, English, and Hinglish.
+   * Performs multipart upload to Groq Whisper.
+   * Does NOT manually set Content-Type header to allow multipart boundary auto-generation.
+   * If Expo Winter Fetch fails with "Unsupported FormDataPart implementation",
+   * falls back directly to React Native native XMLHttpRequest.
    */
-  private async transcribeAudioWithGroq(audioUri: string): Promise<string> {
+  private async uploadToGroq(
+    apiKey: string,
+    formData: FormData
+  ): Promise<{ status: number; text: string }> {
+    try {
+      // Do NOT set Content-Type header manually; let RN set the multipart boundary
+      const response = await fetch(AI_ENDPOINTS.groqWhisper, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: formData,
+      });
+
+      const responseText = await response.text();
+      return { status: response.status, text: responseText };
+    } catch (err: any) {
+      const errMsg = String(err?.message || '');
+      // When Expo Winter Fetch rejects RN FormData { uri, name, type }, fallback to RN XMLHttpRequest
+      if (
+        (errMsg.includes('FormDataPart') || errMsg.includes('Unsupported')) &&
+        typeof XMLHttpRequest !== 'undefined'
+      ) {
+        console.log('[SpeechToTextService] Expo fetch FormDataPart error detected. Falling back to XMLHttpRequest.');
+        return await new Promise<{ status: number; text: string }>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST', AI_ENDPOINTS.groqWhisper);
+          xhr.setRequestHeader('Authorization', `Bearer ${apiKey}`);
+          // Do NOT set Content-Type; let RN set multipart boundary
+          xhr.onload = () => {
+            resolve({ status: xhr.status, text: xhr.responseText });
+          };
+          xhr.onerror = () => {
+            reject(new Error(`Network request failed with status ${xhr.status}`));
+          };
+          xhr.ontimeout = () => {
+            reject(new Error('Transcription request timed out'));
+          };
+          xhr.timeout = AI_REQUEST_TIMEOUT_MS;
+          xhr.send(formData);
+        });
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Sends audio to Groq Whisper API for high-accuracy multilingual transcription.
+   * Fields: model "whisper-large-v3-turbo", language "hi".
+   */
+  private async transcribeAudioWithGroq(recordingUri: string): Promise<string> {
     const apiKey = getGroqApiKey();
     if (!apiKey || apiKey === 'YOUR_GROQ_API_KEY') {
       throw new VoiceRecognitionError(
@@ -280,45 +347,42 @@ class SpeechToTextService {
     const formData = new FormData();
 
     // In React Native, local file URIs are sent via { uri, name, type }
-    const filePayload = {
-      uri: audioUri,
-      name: 'voice_input.m4a',
+    formData.append('file', {
+      uri: recordingUri,
+      name: 'audio.m4a',
       type: 'audio/m4a',
-    };
+    } as any);
 
-    formData.append('file', filePayload as any);
-    formData.append('model', GROQ_WHISPER_MODEL);
-    formData.append('response_format', 'json');
-    formData.append('temperature', '0');
-    // Prompt hints help Whisper accurately parse Hindi/Hinglish healthcare queries
-    formData.append(
-      'prompt',
-      'Hindi, Hinglish, and English healthcare transcription: Mera BP check karo, 7 din ka trend, aaj ka workout, exercises, vitals'
-    );
+    formData.append('model', 'whisper-large-v3-turbo');
+    formData.append('language', 'hi');
 
-    const response = await fetchWithTimeout(
-      AI_ENDPOINTS.groqWhisper,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: formData,
-      },
-      AI_REQUEST_TIMEOUT_MS
-    );
+    try {
+      const { status, text: responseText } = await this.uploadToGroq(apiKey, formData);
 
-    const data = await response.json().catch(() => ({}));
+      console.log(`[SpeechToTextService] Groq Whisper response status: ${status}`);
+      console.log(`[SpeechToTextService] Groq Whisper response body:`, responseText);
 
-    if (!response.ok) {
-      const err = (data as { error?: { message?: string } })?.error?.message;
+      let data: any = {};
+      try {
+        data = JSON.parse(responseText);
+      } catch {
+        data = {};
+      }
+
+      if (status < 200 || status >= 300) {
+        const errMsg = data?.error?.message || `Groq Whisper failed with HTTP ${status}`;
+        throw new VoiceRecognitionError(errMsg, 'TRANSCRIPTION_FAILED');
+      }
+
+      return data?.text || '';
+    } catch (error: any) {
+      console.log('[SpeechToTextService] Transcription request failed:', error?.message || error);
+      if (error instanceof VoiceRecognitionError) throw error;
       throw new VoiceRecognitionError(
-        err || `Groq Whisper failed with HTTP ${response.status}`,
+        error?.message || 'Transcription failed. Please try again.',
         'TRANSCRIPTION_FAILED'
       );
     }
-
-    return (data as { text?: string })?.text || '';
   }
 }
 

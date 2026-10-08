@@ -10,6 +10,7 @@ import {
   Platform,
   ActivityIndicator,
   Animated,
+  ToastAndroid,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -152,11 +153,17 @@ export default function ChatScreen() {
   const handleVoiceTranscript = (transcript: string) => {
     const spoken = transcript.trim();
     if (!spoken) return;
+    setInputText(spoken);
     setErrorMessage(null);
     void handleSendMessage(spoken, true);
   };
 
   const handleVoiceError = (errorMsg: string) => {
+    if (Platform.OS === 'android') {
+      try {
+        ToastAndroid.show(errorMsg, ToastAndroid.SHORT);
+      } catch {}
+    }
     setErrorMessage(errorMsg);
   };
 
