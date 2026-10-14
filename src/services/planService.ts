@@ -23,7 +23,9 @@ export const PlanService = {
     if (!category || category === 'unclear') return null;
 
     const group = getExercisesForCategory(category);
-    const existingPlan = category in plansData ? (plansData as any)[category] : null;
+    const existingPlanKey = (Object.keys(plansData) as (keyof typeof plansData)[])
+      .find((planCategory) => planCategory === category);
+    const existingPlan = existingPlanKey ? plansData[existingPlanKey] : null;
     const diet = existingPlan?.diet || 'Focus on nutrient-dense foods, balanced protein, and optimal hydration to support daily recovery and energy.';
 
     if (group && group.exercises.length > 0) {

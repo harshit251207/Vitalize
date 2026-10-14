@@ -38,12 +38,14 @@ export default function AppTabs() {
       <Tabs.Screen 
         name="plan" 
         options={{ 
-          title: 'My Plan',
+          title: 'Plans',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="fitness-outline" size={size || 24} color={color} />
           ),
         }} 
       />
+      <Tabs.Screen name="exercise" options={{ href: null }} />
+      <Tabs.Screen name="diet" options={{ href: null }} />
       <Tabs.Screen 
         name="profile" 
         options={{ 

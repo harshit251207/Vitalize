@@ -1,23 +1,52 @@
 import { useTheme } from '@/hooks/use-theme';
 import { AIService, DisabilityCategories, DisabilityCategory } from '@/services/aiService';
-import { VitalsService } from '@/services/vitalsService';
-import { useAuth } from '@/store/AuthContext';
+import { CATEGORY_LABELS, DisabilityCategory as SavedDisabilityCategory } from '@/lib/categoryStorage';
+import { useAuth, useCategory } from '@/store/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+
+function toSavedCategory(category: Exclude<DisabilityCategory, 'unclear'>): SavedDisabilityCategory {
+  switch (category) {
+    case 'Hemiplegia':
+      return 'hemiplegia';
+    case 'Paraplegia':
+      return 'paraplegia';
+    case 'Quadriplegia/Tetraplegia':
+      return 'quadriplegia';
+    case 'Monoplegia':
+      return 'monoplegia';
+    case 'Diplegia':
+      return 'diplegia';
+  }
+}
 
 export default function ReportUploadScreen() {
   const { user } = useAuth();
+  const { category, isLoading: isCategoryLoading, refreshCategory, saveCategory } = useCategory();
   const router = useRouter();
   const colors = useTheme();
+  const params = useLocalSearchParams<{ change?: string }>();
+  const isChangingCategory = params.change === '1';
 
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiResult, setAiResult] = useState<DisabilityCategory | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<DisabilityCategory | null>(null);
-  const [showManualSelection, setShowManualSelection] = useState(false);
+  const [showManualSelection, setShowManualSelection] = useState(isChangingCategory);
+
+  useEffect(() => {
+    if (user) void refreshCategory();
+  }, [user, refreshCategory]);
+
+  useEffect(() => {
+    if (isCategoryLoading) return;
+    if (category && !isChangingCategory) {
+      router.replace('/plan');
+    }
+  }, [category, isCategoryLoading, isChangingCategory, router]);
 
   const pickImage = async (useCamera: boolean) => {
     try {
@@ -54,7 +83,7 @@ export default function ReportUploadScreen() {
           analyzeImage(asset.base64, mimeType);
         }
       }
-    } catch (e) {
+    } catch {
       Alert.alert('Error', 'Failed to pick image.');
     }
   };
@@ -78,12 +107,13 @@ export default function ReportUploadScreen() {
         setAiResult(result);
         setSelectedCategory(result);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       setIsAnalyzing(false);
       console.error('Analysis failed:', error);
+      const message = error instanceof Error ? error.message : 'Unknown error';
       Alert.alert(
         'AI Analysis Failed',
-        `Error: ${error?.message || 'Unknown error'}. Please select your category manually.`,
+        `Error: ${message}. Please select your category manually.`,
         [{ text: 'OK', onPress: () => setShowManualSelection(true) }]
       );
     }
@@ -92,17 +122,36 @@ export default function ReportUploadScreen() {
   const handleSave = async () => {
     if (!user || !selectedCategory || selectedCategory === 'unclear') return;
 
-    await VitalsService.updateUserProfile(user, { disabilityCategory: selectedCategory });
-    
-    Alert.alert('Profile Saved', `Your category has been updated to ${selectedCategory}.`, [
-      { text: 'OK', onPress: () => router.back() }
-    ]);
+    const categoryId = toSavedCategory(selectedCategory);
+    const source = aiResult === selectedCategory && !showManualSelection ? 'auto' : 'manual';
+    try {
+      const synced = await saveCategory(categoryId, source);
+      Alert.alert(
+        synced ? 'Category saved' : 'Saved on this device',
+        synced
+          ? `${CATEGORY_LABELS[categoryId]} is saved to your profile.`
+          : `${CATEGORY_LABELS[categoryId]} is saved on this device. Cloud sync could not complete.`,
+        [{ text: 'View my plan', onPress: () => router.replace('/plan') }],
+      );
+    } catch (error) {
+      console.error('Unable to save disability category:', error);
+      Alert.alert('Unable to save category', 'Please try again after checking your device storage.');
+    }
   };
 
   // Determine current step index
   let currentStep = 1;
   if (imageUri && isAnalyzing) currentStep = 2;
   if (imageUri && !isAnalyzing && (aiResult || showManualSelection)) currentStep = 3;
+
+  if (isCategoryLoading || (category && !isChangingCategory)) {
+    return (
+      <View style={[styles.container, styles.checkingContainer, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={[styles.loadingTitle, { color: colors.text }]}>Checking your saved category…</Text>
+      </View>
+    );
+  }
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: colors.background }]} showsVerticalScrollIndicator={false}>
@@ -296,6 +345,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 24,
+  },
+  checkingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 14,
   },
   headerRow: {
     flexDirection: 'row',

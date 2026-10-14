@@ -1,7 +1,8 @@
 import React, { useState, useCallback } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAuth } from '@/store/AuthContext';
+import { useAuth, useCategory } from '@/store/AuthContext';
+import { CATEGORY_LABELS } from '@/lib/categoryStorage';
 import { useTheme } from '@/hooks/use-theme';
 import { VitalsService } from '@/services/vitalsService';
 import { UserProfile } from '@/types';
@@ -10,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 export default function ProfileScreen() {
   const { user, logout } = useAuth();
+  const { category } = useCategory();
   const colors = useTheme();
   const router = useRouter();
 
@@ -47,27 +49,44 @@ export default function ProfileScreen() {
             <Text style={[styles.sectionTitle, { color: colors.text }]}>Disability Classification</Text>
           </View>
 
-          <Text style={[styles.categoryValueText, { color: profile?.disabilityCategory ? colors.primary : colors.textSecondary }]}>
-            {profile?.disabilityCategory || 'Not classified yet'}
+          <Text style={[styles.categoryValueText, { color: category ? colors.primary : colors.textSecondary }]}>
+            {category ? CATEGORY_LABELS[category] : 'Not classified yet'}
           </Text>
 
           <Text style={[styles.categoryDesc, { color: colors.textSecondary }]}>
-            {profile?.disabilityCategory 
+            {category
               ? 'Your workout exercises and diet guidelines are tailored to this mobility classification.'
               : 'Upload a report photo or select your category to unlock personalized plans.'}
           </Text>
 
           <TouchableOpacity 
             style={[styles.actionButton, { backgroundColor: colors.primary }]} 
-            onPress={() => router.push('/report-upload')}
+            onPress={() => router.push(category ? '/report-upload?change=1' : '/report-upload')}
             activeOpacity={0.85}
           >
             <Ionicons name="cloud-upload-outline" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
             <Text style={styles.actionButtonText}>
-              {profile?.disabilityCategory ? 'Update Medical Report' : 'Classify Disability'}
+              {category ? 'Change category' : 'Classify Disability'}
             </Text>
           </TouchableOpacity>
         </View>
+
+        <TouchableOpacity
+          style={[styles.emergencyButton, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}
+          onPress={() => router.push('/emergency-contacts')}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel="Manage emergency contacts"
+        >
+          <Ionicons name="people-outline" size={22} color={colors.danger} style={{ marginRight: 10 }} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.emergencyButtonTitle, { color: colors.text }]}>Emergency contacts</Text>
+            <Text style={[styles.emergencyButtonSubtitle, { color: colors.textSecondary }]}>
+              Manage family and ambulance numbers
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+        </TouchableOpacity>
 
         {/* Calorie Calculator Profile Info */}
         {profile?.calorieCalculator && (
@@ -221,6 +240,23 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '700',
+  },
+  emergencyButton: {
+    minHeight: 70,
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingHorizontal: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  emergencyButtonTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  emergencyButtonSubtitle: {
+    fontSize: 12,
+    marginTop: 3,
   },
   rangeRow: {
     flexDirection: 'row',

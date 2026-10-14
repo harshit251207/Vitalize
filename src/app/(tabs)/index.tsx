@@ -1,15 +1,21 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Image } from 'react-native';
+import { Alert, Linking, StyleSheet, View, Text, TouchableOpacity, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import * as WebBrowser from 'expo-web-browser';
 
-import { useAuth } from '@/store/AuthContext';
+import { useAuth, useCategory } from '@/store/AuthContext';
+import { CATEGORY_LABELS } from '@/lib/categoryStorage';
 import { VitalsService } from '@/services/vitalsService';
 import { Vitals, UserProfile } from '@/types';
 import { useTheme } from '@/hooks/use-theme';
-import { DailyCalorieTracker } from '@/components/calorie-tracker/DailyCalorieTracker';
 import { fetchUserProfile } from '@/services/authService';
+import { SOSButton } from '@/components/SOSButton';
+import { DOCTOR_URL } from '@/constants/links';
+import { WorkoutProgressHero } from '@/components/WorkoutProgressHero';
+import { useWorkoutProgress } from '@/hooks/use-workout-progress';
 
 interface VitalMetricProps {
   label: string;
@@ -90,6 +96,8 @@ function VitalCard({
 
 export default function HomeScreen() {
   const { user } = useAuth();
+  const { category } = useCategory();
+  const { completedCount, totalCount, progressPercent } = useWorkoutProgress();
   const router = useRouter();
   const colors = useTheme();
 
@@ -126,7 +134,7 @@ export default function HomeScreen() {
     };
   }, [user]);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     if (user) {
       try {
         const vitals = await VitalsService.getVitalHistory();
@@ -144,12 +152,12 @@ export default function HomeScreen() {
       const p = await VitalsService.getUserProfile(user);
       setProfile(p);
     }
-  };
+  }, [user]);
 
   useFocusEffect(
     useCallback(() => {
-      loadData();
-    }, [user])
+      void loadData();
+    }, [loadData])
   );
 
   const ranges = profile?.healthyRanges;
@@ -168,6 +176,23 @@ export default function HomeScreen() {
     day: 'numeric',
   });
 
+  const openDoctorPage = async () => {
+    try {
+      await WebBrowser.openBrowserAsync(DOCTOR_URL);
+    } catch (browserError) {
+      console.warn('In-app browser failed to open doctor page:', browserError);
+      try {
+        await Linking.openURL(DOCTOR_URL);
+      } catch (linkError) {
+        console.error('Unable to open doctor page:', linkError);
+        Alert.alert(
+          'Unable to open doctor services',
+          'Please try again later or visit Apollo 24|7 in your browser.',
+        );
+      }
+    }
+  };
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -182,11 +207,11 @@ export default function HomeScreen() {
             </Text>
           </View>
 
-          {profile?.disabilityCategory ? (
+          {category ? (
             <View style={[styles.categoryPill, { backgroundColor: colors.primary + '18' }]}>
               <Ionicons name="medical" size={14} color={colors.primary} style={{ marginRight: 5 }} />
               <Text style={[styles.categoryPillText, { color: colors.primary }]}>
-                {profile.disabilityCategory}
+                {CATEGORY_LABELS[category]}
               </Text>
             </View>
           ) : (
@@ -208,37 +233,10 @@ export default function HomeScreen() {
           )}
         </View>
 
-        <Text
-          style={[
-            styles.sectionTitle,
-            styles.careHeading,
-            { color: colors.text },
-          ]}
-        >
-          SPECIAL CARE FOR SPECIAL PEOPLE
-        </Text>
-
-        <Image
-          source={require('@/assets/images/disability-illustration.png')}
-          style={styles.careIllustration}
-          resizeMode="contain"
-          accessibilityLabel="People with different disabilities"
-        />
-
-        <TouchableOpacity
-          style={[styles.logVitalsButton, { backgroundColor: colors.primary }]}
-          onPress={() => router.push('/vitals-entry')}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="add-circle" size={20} color="#FFFFFF" style={{ marginRight: 6 }} />
-          <Text style={styles.logVitalsButtonText}>Log New Vitals</Text>
-        </TouchableOpacity>
-
-        {/* Vitals Section Header */}
         <View style={styles.sectionHeaderRow}>
           <View>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Today's Overview</Text>
-            <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>Key health markers</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Health overview</Text>
+            <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>Your latest readings</Text>
           </View>
           <View style={{ flexDirection: 'row', gap: 12 }}>
             <TouchableOpacity onPress={() => router.push('/bp-analytics')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -292,31 +290,94 @@ export default function HomeScreen() {
           />
         </View>
 
-        {/* Daily Calorie Tracker Section */}
-        <DailyCalorieTracker />
+        <WorkoutProgressHero
+          percent={category ? progressPercent : 0}
+          completed={category ? completedCount : 0}
+          total={totalCount}
+        />
 
-        {/* Quick Plan Navigation Card */}
-        <TouchableOpacity
-          style={[
-            styles.quickPlanCard,
-            { backgroundColor: colors.backgroundElement, borderColor: colors.border },
-          ]}
-          onPress={() => router.push('/plan')}
-          activeOpacity={0.85}
-        >
-          <View style={[styles.quickPlanIconCircle, { backgroundColor: colors.success + '18' }]}>
-            <Ionicons name="barbell-outline" size={26} color={colors.success} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.quickPlanTitle, { color: colors.text }]}>My Personalized Plan</Text>
-            <Text style={[styles.quickPlanSubtitle, { color: colors.textSecondary }]}>
-              {profile?.disabilityCategory
-                ? `6 Target Workouts & Diet for ${profile.disabilityCategory}`
-                : 'Set category to view workouts & nutrition'}
+        <View style={styles.sectionsHeader}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Your plan</Text>
+          <TouchableOpacity onPress={() => router.push('/plan')} accessibilityRole="button">
+            <Text style={[styles.viewHistoryLink, { color: colors.primary }]}>View all</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.planSections}>
+          <TouchableOpacity
+            style={[styles.planSectionCard, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}
+            onPress={() => router.push(category ? '/exercise' : '/report-upload')}
+            accessibilityRole="button"
+            accessibilityLabel="Open exercise section"
+            activeOpacity={0.85}
+          >
+            <View style={[styles.planSectionIcon, { backgroundColor: colors.success + '18' }]}>
+              <Ionicons name="barbell-outline" size={22} color={colors.success} />
+            </View>
+            <Text style={[styles.planSectionTitle, { color: colors.text }]}>Exercise</Text>
+            <Text style={[styles.planSectionCaption, { color: colors.textSecondary }]}>
+              {category ? `${progressPercent}% complete today` : 'Personalized workouts'}
             </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.planSectionCard, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}
+            onPress={() => router.push(category ? '/diet' : '/report-upload')}
+            accessibilityRole="button"
+            accessibilityLabel="Open diet section"
+            activeOpacity={0.85}
+          >
+            <View style={[styles.planSectionIcon, { backgroundColor: colors.warning + '1E' }]}>
+              <Ionicons name="nutrition-outline" size={22} color={colors.warning} />
+            </View>
+            <Text style={[styles.planSectionTitle, { color: colors.text }]}>Diet</Text>
+            <Text style={[styles.planSectionCaption, { color: colors.textSecondary }]}>Meals & nutrition</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.actionHeader}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Quick actions</Text>
+        </View>
+        <TouchableOpacity
+          onPress={() => void openDoctorPage()}
+          activeOpacity={0.88}
+          accessibilityRole="button"
+          accessibilityLabel="Contact a doctor"
+          style={styles.doctorButton}
+        >
+          <LinearGradient
+            colors={['#16B8B1', '#078A9B']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.doctorGradient}
+          >
+            <MaterialCommunityIcons name="stethoscope" size={24} color="#FFFFFF" />
+            <Text style={styles.doctorButtonText}>Contact a doctor</Text>
+            <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
+          </LinearGradient>
         </TouchableOpacity>
+        <Text style={[styles.doctorCaption, { color: colors.textSecondary }]}>
+          Disability & rehabilitation specialists on Apollo 24|7
+        </Text>
+        <View style={styles.secondaryActions}>
+          <TouchableOpacity
+            style={[styles.logVitalsButton, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}
+            onPress={() => router.push('/vitals-entry')}
+            accessibilityRole="button"
+            accessibilityLabel="Log new vitals"
+          >
+            <Ionicons name="add-circle-outline" size={20} color={colors.primary} />
+            <Text style={[styles.logVitalsButtonText, { color: colors.primary }]}>Log vitals</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.contactsButton, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}
+            onPress={() => router.push('/emergency-contacts')}
+            accessibilityRole="button"
+            accessibilityLabel="Manage emergency contacts"
+          >
+            <Ionicons name="people-outline" size={20} color={colors.text} />
+            <Text style={[styles.contactsText, { color: colors.text }]}>Contacts</Text>
+          </TouchableOpacity>
+        </View>
+        <SOSButton />
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -369,28 +430,79 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-  careHeading: {
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 12,
-  },
-  careIllustration: {
-    width: '100%',
-    height: 190,
-    marginBottom: 16,
-  },
   logVitalsButton: {
-    height: 52,
+    minHeight: 48,
+    flex: 1,
     borderRadius: 14,
+    borderWidth: 1,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 22,
+    gap: 7,
+    paddingHorizontal: 10,
   },
   logVitalsButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '700',
+  },
+  contactsButton: {
+    minHeight: 48,
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    justifyContent: 'center',
+    gap: 7,
+  },
+  contactsText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  secondaryActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 10,
+    marginBottom: 12,
+  },
+  sectionsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  planSections: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 20,
+  },
+  planSectionCard: {
+    flex: 1,
+    minHeight: 132,
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 14,
+  },
+  planSectionIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  planSectionTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  planSectionCaption: {
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 4,
+  },
+  actionHeader: {
+    marginBottom: 10,
   },
   sectionHeaderRow: {
     flexDirection: 'row',
@@ -488,34 +600,27 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontStyle: 'italic',
   },
-  quickPlanCard: {
+  doctorButton: {
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  doctorGradient: {
+    minHeight: 60,
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    borderRadius: 20,
-    borderWidth: 1,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
-    elevation: 2,
+    justifyContent: 'space-between',
+    paddingHorizontal: 18,
+    gap: 12,
   },
-  quickPlanIconCircle: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 14,
+  doctorButtonText: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
   },
-  quickPlanTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 2,
-  },
-  quickPlanSubtitle: {
+  doctorCaption: {
     fontSize: 12,
-    lineHeight: 16,
+    textAlign: 'center',
+    marginTop: 6,
   },
 });
