@@ -8,6 +8,122 @@ service cloud.firestore {
         allow read, create, update, delete: if request.auth != null
           && request.auth.uid == userId;
       }
+
+      match /essentials/{itemId} {
+        allow read, delete: if request.auth != null && request.auth.uid == userId;
+        allow create, update: if request.auth != null
+          && request.auth.uid == userId
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 80
+          && request.resource.data.category is string
+          && request.resource.data.category in [
+            'Medicine', 'Catheter', 'Diapers', 'Vitamins/Supplements',
+            'Gloves', 'Skin care', 'Wipes', 'Other'
+          ]
+          && request.resource.data.unitsLeft is int
+          && request.resource.data.unitsLeft >= 0
+          && request.resource.data.unitsPerDay is number
+          && request.resource.data.unitsPerDay > 0
+          && request.resource.data.runOutDate is timestamp
+          && request.resource.data.remindDaysBefore is int
+          && request.resource.data.remindDaysBefore in [3, 5, 7, 10]
+          && (
+            request.resource.data.notificationId == null
+            || request.resource.data.notificationId is string
+          );
+      }
+    }
+
+    match /posts/{postId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly([
+          'text', 'authorId', 'authorName', 'isAnonymous', 'category',
+          'conditionCategory', 'createdAt', 'likeCount', 'commentCount',
+          'reportCount', 'hidden'
+        ])
+        && request.resource.data.keys().hasAll([
+          'text', 'authorId', 'authorName', 'isAnonymous', 'category',
+          'conditionCategory', 'createdAt', 'likeCount', 'commentCount',
+          'reportCount', 'hidden'
+        ])
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.text is string
+        && request.resource.data.text.size() >= 1
+        && request.resource.data.text.size() <= 500
+        && request.resource.data.authorName is string
+        && request.resource.data.authorName.size() >= 1
+        && request.resource.data.authorName.size() <= 40
+        && request.resource.data.authorName.matches('^[A-Za-z][A-Za-z -]{0,39}$')
+        && request.resource.data.isAnonymous is bool
+        && (!request.resource.data.isAnonymous || request.resource.data.authorName == 'Anonymous')
+        && request.resource.data.category in ['Tips', 'Questions', 'Motivation', 'Exercise']
+        && request.resource.data.conditionCategory in [
+          'hemiplegia', 'paraplegia', 'quadriplegia', 'monoplegia', 'diplegia', 'unknown'
+        ]
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.likeCount == 0
+        && request.resource.data.commentCount == 0
+        && request.resource.data.reportCount == 0
+        && request.resource.data.hidden == false;
+      allow update: if request.auth != null
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'likeCount', 'commentCount', 'reportCount', 'hidden'
+        ])
+        && request.resource.data.likeCount is int
+        && request.resource.data.likeCount >= 0
+        && request.resource.data.commentCount is int
+        && request.resource.data.commentCount >= 0
+        && request.resource.data.reportCount is int
+        && request.resource.data.reportCount >= 0
+        && request.resource.data.hidden is bool;
+      allow delete: if request.auth != null
+        && resource.data.authorId == request.auth.uid;
+
+      match /comments/{commentId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null
+          && request.resource.data.keys().hasOnly([
+            'text', 'authorId', 'authorName', 'isAnonymous', 'createdAt'
+          ])
+          && request.resource.data.keys().hasAll([
+            'text', 'authorId', 'authorName', 'isAnonymous', 'createdAt'
+          ])
+          && request.resource.data.authorId == request.auth.uid
+          && request.resource.data.text is string
+          && request.resource.data.text.size() >= 1
+          && request.resource.data.text.size() <= 300
+          && request.resource.data.authorName is string
+          && request.resource.data.authorName.size() >= 1
+          && request.resource.data.authorName.size() <= 40
+          && request.resource.data.authorName.matches('^[A-Za-z][A-Za-z -]{0,39}$')
+          && request.resource.data.isAnonymous is bool
+          && (!request.resource.data.isAnonymous || request.resource.data.authorName == 'Anonymous')
+          && request.resource.data.createdAt is timestamp;
+        allow delete: if request.auth != null
+          && resource.data.authorId == request.auth.uid;
+      }
+
+      match /likes/{userId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null
+          && userId == request.auth.uid
+          && request.resource.data.keys().hasOnly(['createdAt'])
+          && request.resource.data.createdAt is timestamp;
+        allow delete: if request.auth != null && userId == request.auth.uid;
+      }
+
+      match /reports/{userId} {
+        allow read: if request.auth != null && userId == request.auth.uid;
+        allow create: if request.auth != null
+          && userId == request.auth.uid
+          && request.resource.data.keys().hasOnly(['reason', 'createdAt'])
+          && request.resource.data.reason in [
+            'Spam', 'Harassment', 'Unsafe medical advice', 'Other'
+          ]
+          && request.resource.data.createdAt is timestamp;
+      }
     }
   }
 }

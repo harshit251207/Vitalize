@@ -54,3 +54,12 @@ Join our community of developers creating universal apps.
 
 - [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
 - [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+
+## Community and shopping essentials
+
+- Deploy the rules in `firestore.rules` before using the Community or Essentials screens.
+- If Community shows a Firestore permission error, deploy these rules to the same Firebase project configured in the app: `npx firebase-tools deploy --only firestore:rules --project vitalize-d5e42`. Community reads are allowed to every signed-in user; a local rules file does not take effect until deployed.
+- If Firestore requests a composite index, create `hidden` ascending + `createdAt` descending for All; `hidden` ascending + `category` ascending + `createdAt` descending for category filters; and `hidden` ascending + `conditionCategory` ascending + `createdAt` descending for “My condition”. Firestore's error contains a one-click index-creation link.
+- Community likes, comments, and reports update client-side counters in transactions. This is suitable for a hackathon, but a modified client can spoof counts or hide posts; use trusted Cloud Functions for production counter and moderation logic.
+- Essentials are cached on-device for offline viewing. Refill reminders use `expo-notifications`; after installing the native package, create a new EAS development build and grant notification permission on the device.
+- This app is not a medical device. Community posts are personal experiences, not medical advice; users should ask their doctor before changing medicines, exercises, or diet.
