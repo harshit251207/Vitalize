@@ -1,4 +1,5 @@
 import { useTheme } from '@/hooks/use-theme';
+import { Fonts } from '@/constants/theme';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
@@ -21,7 +22,10 @@ export function WorkoutProgressHero({
 
   return (
     <View
-      style={styles.card}
+      style={[
+        styles.card,
+        { backgroundColor: colors.backgroundSelected, borderColor: colors.border },
+      ]}
       accessibilityLabel={`Today's workout progress: ${boundedPercent} percent, ${completed} of ${total} exercises`}
     >
       <Text style={[styles.title, { color: colors.text }]}>Today&apos;s movement</Text>
@@ -65,13 +69,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     marginBottom: 18,
-    borderRadius: 20,
+    borderRadius: 24,
+    borderWidth: 0,
   },
   title: {
     alignSelf: 'flex-start',
     fontSize: 17,
     fontWeight: '800',
     marginBottom: 4,
+    fontFamily: Fonts.sans,
+    lineHeight: 23,
   },
   visual: {
     height: 138,
@@ -87,8 +94,8 @@ const styles = StyleSheet.create({
   image: {
     position: 'absolute',
     bottom: 0,
-    width: 150,
-    height: 105,
+    width: 180,
+    height: 118,
   },
   percentBadge: {
     position: 'absolute',
@@ -101,10 +108,13 @@ const styles = StyleSheet.create({
   percent: {
     fontSize: 14,
     fontWeight: '900',
+    fontFamily: Fonts.sans,
   },
   caption: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
     marginTop: 6,
+    lineHeight: 20,
+    fontFamily: Fonts.sans,
   },
 });

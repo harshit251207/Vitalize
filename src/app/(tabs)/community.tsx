@@ -16,6 +16,9 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { QueryDocumentSnapshot, DocumentData } from 'firebase/firestore';
 import { useTheme } from '@/hooks/use-theme';
+import { Fonts } from '@/constants/theme';
+import Animated, { FadeInDown } from 'react-native-reanimated';
+import { WellnessBanner } from '@/components/WellnessBanner';
 import { useAuth, useCategory } from '@/store/AuthContext';
 import { fetchUserProfile } from '@/services/authService';
 import {
@@ -38,7 +41,7 @@ import {
 } from '@/services/communityService';
 
 const NOT_MEDICAL_ADVICE =
-  'Posts here are personal experiences, not medical advice. Please ask your doctor before changing medicines, exercises or diet.';
+  'Personal experiences, not medical advice. Check with your doctor before changing care.';
 
 type FeedFilter = 'All' | PostCategory | 'My condition';
 const FILTERS: FeedFilter[] = ['All', ...POST_CATEGORIES, 'My condition'];
@@ -65,8 +68,8 @@ function timeLabel(date: Date | null): string {
 
 export default function CommunityScreen() {
   const colors = useTheme();
-  const actionColor = colors.primary === '#38BDF8' ? colors.primary : '#0369A1';
-  const actionTextColor = colors.primary === '#38BDF8' ? '#0F172A' : '#FFFFFF';
+  const actionColor = colors.primary;
+  const actionTextColor = '#FFFFFF';
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { category: condition } = useCategory();
@@ -287,8 +290,13 @@ export default function CommunityScreen() {
           </TouchableOpacity>
         </View>
 
+        <WellnessBanner
+          variant="community"
+          title="“Two cups of coffee always taste better than one cup of coffee :)”"
+        />
+
         <View style={[styles.disclaimer, { backgroundColor: colors.warning + '1A', borderColor: colors.warning }]}>
-          <Ionicons name="information-circle" size={24} color={colors.warning} />
+          <Ionicons name="information-circle" size={18} color={colors.warning} />
           <Text style={[styles.disclaimerText, { color: colors.text }]}>{NOT_MEDICAL_ADVICE}</Text>
         </View>
 
@@ -355,9 +363,9 @@ export default function CommunityScreen() {
                   <Text style={[styles.stateActionText, { color: actionTextColor }]}>Write a post</Text>
                 </TouchableOpacity>
               </View>
-            ) : visiblePosts.map((post) => (
+            ) : visiblePosts.map((post, index) => (
+              <Animated.View key={post.id} entering={FadeInDown.delay(Math.min(index * 45, 270)).duration(380)}>
               <PostCard
-                key={post.id}
                 post={post}
                 currentUserId={user ?? ''}
                 offline={feedOffline}
@@ -369,6 +377,7 @@ export default function CommunityScreen() {
                   setReportReason('Spam');
                 }}
               />
+              </Animated.View>
             ))}
             {canLoadMore && (
               <TouchableOpacity
@@ -400,7 +409,7 @@ export default function CommunityScreen() {
               </TouchableOpacity>
             </View>
             <View style={[styles.disclaimer, { backgroundColor: colors.warning + '1A', borderColor: colors.warning }]}>
-              <Ionicons name="information-circle" size={24} color={colors.warning} />
+              <Ionicons name="information-circle" size={18} color={colors.warning} />
               <Text style={[styles.disclaimerText, { color: colors.text }]}>{NOT_MEDICAL_ADVICE}</Text>
             </View>
             <TextInput
@@ -579,7 +588,7 @@ function PostCard({
   };
 
   return (
-    <View style={[styles.postCard, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
+    <View style={[styles.postCard, { backgroundColor: colors.backgroundSelected, borderColor: colors.border }]}>
       <View style={styles.postHeader}>
         <View style={[styles.avatar, { backgroundColor: colors.primaryLight }]}>
           <Ionicons name={post.isAnonymous ? 'eye-off-outline' : 'person-outline'} size={22} color={colors.primary} />
@@ -693,12 +702,12 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: 18, paddingTop: 12, gap: 14 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   headerText: { flex: 1 },
-  title: { fontSize: 30, lineHeight: 38, fontWeight: '800' },
-  subtitle: { fontSize: 15, lineHeight: 21, marginTop: 2 },
+  title: { fontFamily: Fonts.sans, fontSize: 29, lineHeight: 37, fontWeight: '700' },
+  subtitle: { fontFamily: Fonts.sans, fontSize: 15, lineHeight: 22, marginTop: 2 },
   createButton: { minHeight: 56, paddingHorizontal: 17, borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 5 },
   createButtonText: { color: '#FFFFFF', fontSize: 17, fontWeight: '700' },
-  disclaimer: { borderWidth: 1, borderRadius: 15, padding: 13, flexDirection: 'row', alignItems: 'flex-start', gap: 9 },
-  disclaimerText: { flex: 1, fontSize: 14, lineHeight: 20, fontWeight: '600' },
+  disclaimer: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 7, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  disclaimerText: { flex: 1, fontSize: 11, lineHeight: 15, fontWeight: '500' },
   filters: { gap: 9, paddingVertical: 2 },
   filterChip: { minHeight: 56, borderWidth: 1, borderRadius: 15, paddingHorizontal: 15, justifyContent: 'center' },
   filterText: { fontSize: 15, lineHeight: 20, fontWeight: '600' },
@@ -710,14 +719,14 @@ const styles = StyleSheet.create({
   stateActionText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
   errorNotice: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14, borderRadius: 14 },
   errorText: { flex: 1, fontSize: 15, lineHeight: 21 },
-  postCard: { borderWidth: 1, borderRadius: 18, padding: 16, gap: 12 },
+  postCard: { borderWidth: 0, borderRadius: 22, padding: 16, gap: 12 },
   postHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   avatar: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   postAuthor: { flex: 1 },
-  authorName: { fontSize: 16, lineHeight: 22, fontWeight: '700' },
-  postMeta: { fontSize: 13, lineHeight: 19, marginTop: 2 },
+  authorName: { fontFamily: Fonts.sans, fontSize: 16, lineHeight: 22, fontWeight: '700' },
+  postMeta: { fontFamily: Fonts.sans, fontSize: 13, lineHeight: 19, marginTop: 2 },
   iconButton: { minWidth: 56, minHeight: 56, alignItems: 'center', justifyContent: 'center' },
-  postBody: { fontSize: 17, lineHeight: 25 },
+  postBody: { fontFamily: Fonts.sans, fontSize: 17, lineHeight: 28, letterSpacing: 0.1, fontWeight: '400' },
   inlineError: { fontSize: 14, lineHeight: 20 },
   postActions: { flexDirection: 'row', borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 6 },
   postAction: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 10, marginRight: 16 },
@@ -725,7 +734,7 @@ const styles = StyleSheet.create({
   commentsSection: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 12, gap: 10 },
   commentRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   commentAuthor: { fontSize: 14, fontWeight: '700', lineHeight: 20 },
-  commentBody: { fontSize: 15, lineHeight: 21 },
+  commentBody: { fontFamily: Fonts.sans, fontSize: 15, lineHeight: 23 },
   commentDelete: { minWidth: 56, minHeight: 56, alignItems: 'center', justifyContent: 'center' },
   commentComposer: { flexDirection: 'row', gap: 8, alignItems: 'center' },
   commentInput: { flex: 1, minHeight: 56, maxHeight: 112, borderWidth: 1, borderRadius: 14, paddingHorizontal: 12, fontSize: 16 },

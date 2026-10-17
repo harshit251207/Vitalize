@@ -2,11 +2,7 @@ import React from 'react';
 import { StyleSheet, View, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/hooks/use-theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
 import type { BotReply } from '@/services/ai/vitalizeAgent';
-
-const DARK_CARD = '#1A2436';
-const ACCENT = '#7DD3FC';
 
 interface BotMessageProps {
   reply: BotReply;
@@ -15,14 +11,12 @@ interface BotMessageProps {
 
 export function BotMessage({ reply, timestamp }: BotMessageProps) {
   const colors = useTheme();
-  const scheme = useColorScheme();
-  const isDark = scheme !== 'light';
 
-  const cardBg = isDark ? DARK_CARD : colors.backgroundElement;
+  const cardBg = colors.backgroundSelected;
   const textColor = colors.text;
   const muted = colors.textSecondary;
-  const accent = isDark ? ACCENT : colors.primary;
-  const border = isDark ? '#2A3548' : colors.border;
+  const accent = colors.primary;
+  const border = colors.border;
 
   const intro = reply.intro.trim();
   const workout = reply.workout.filter((w) => w.name.trim());
@@ -37,7 +31,7 @@ export function BotMessage({ reply, timestamp }: BotMessageProps) {
         !!intro && <Text style={[styles.intro, { color: textColor }]}>{intro}</Text>
       ) : (
         <Text style={[styles.intro, { color: textColor }]}>
-          I couldn't generate a readable reply. Please try again.
+          I couldn&apos;t generate a readable reply. Please try again.
         </Text>
       )}
 

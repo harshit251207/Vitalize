@@ -13,7 +13,11 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Path } from 'react-native-svg';
 import { useTheme } from '@/hooks/use-theme';
+import { Fonts } from '@/constants/theme';
+import Animated, { FadeInDown } from 'react-native-reanimated';
+import { WellnessBanner } from '@/components/WellnessBanner';
 import { useAuth, useCategory } from '@/store/AuthContext';
 import {
   cacheEssentials,
@@ -76,6 +80,43 @@ const STORE_OPTIONS = {
   },
 } as const;
 
+type StoreKey = keyof typeof STORE_OPTIONS;
+
+function StoreLogo({ store }: { store: StoreKey }) {
+  if (store === 'amazon') {
+    return (
+      <View style={styles.storeLogo}>
+        <Text style={styles.amazonWordmark}>amazon</Text>
+        <Svg width={54} height={9} viewBox="0 0 54 9" style={styles.amazonSmile}>
+          <Path d="M3 2.5c13 7 31 7 44 .5M41 1l6 2-2 5" fill="none" stroke="#FF9900" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+        </Svg>
+      </View>
+    );
+  }
+
+  if (store === 'flipkart') {
+    return (
+      <View style={styles.storeLogo}>
+        <View style={styles.flipkartBag}>
+          <Text style={styles.flipkartF}>F</Text>
+        </View>
+        <Text style={styles.flipkartWordmark}>Flipkart</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.storeLogo, styles.googleLogo]}>
+      <Svg width={32} height={32} viewBox="0 0 48 48">
+        <Path d="M43.6 24.5c0-1.4-.1-2.8-.4-4.1H24v7.8h11a9.4 9.4 0 0 1-4.1 6.2l6.6 5.1c3.9-3.6 6.1-8.8 6.1-15Z" fill="#4285F4" />
+        <Path d="M24 44c5.5 0 10.1-1.8 13.5-4.8l-6.6-5.1c-1.8 1.2-4.1 2-6.9 2-5.3 0-9.8-3.6-11.4-8.4l-6.8 5.2A20 20 0 0 0 24 44Z" fill="#34A853" />
+        <Path d="M12.6 27.7a12 12 0 0 1 0-7.4l-6.8-5.2a20 20 0 0 0 0 17.8l6.8-5.2Z" fill="#FBBC05" />
+        <Path d="M24 11.9c3 0 5.7 1 7.8 3.1l5.9-5.9A19.6 19.6 0 0 0 24 4 20 20 0 0 0 5.8 15.1l6.8 5.2c1.6-4.8 6.1-8.4 11.4-8.4Z" fill="#EA4335" />
+      </Svg>
+    </View>
+  );
+}
+
 function getFriendlyError(error: unknown): string {
   const code = (error as { code?: string })?.code;
   if (code === 'unavailable' || code === 'network-request-failed') {
@@ -106,8 +147,8 @@ function statusFor(item: EssentialItem, colors: ReturnType<typeof useTheme>): {
 
 export default function EssentialsScreen() {
   const colors = useTheme();
-  const actionColor = colors.primary === '#38BDF8' ? colors.primary : '#0369A1';
-  const actionTextColor = colors.primary === '#38BDF8' ? '#0F172A' : '#FFFFFF';
+  const actionColor = colors.primary;
+  const actionTextColor = '#FFFFFF';
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { category: condition } = useCategory();
@@ -372,6 +413,12 @@ export default function EssentialsScreen() {
           </TouchableOpacity>
         </View>
 
+        <WellnessBanner
+          variant="essentials"
+          title="Stay ready, stress less"
+          subtitle="Keep everyday care essentials in view."
+        />
+
         <SafetyNotice />
 
         {offline && !error && (
@@ -410,18 +457,27 @@ export default function EssentialsScreen() {
             </View>
           </View>
         ) : (
-          items.map((item) => {
+          items.map((item, index) => {
             const status = statusFor(item, colors);
             const days = daysUntilRunOut(item);
+            const remainingPercent = Math.min(days / 30, 1) * 100;
             return (
-              <View key={item.id} style={[styles.itemCard, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
+              <Animated.View
+                key={item.id}
+                entering={FadeInDown.delay(Math.min(index * 60, 360)).duration(380)}
+                style={[styles.itemCard, { backgroundColor: colors.backgroundSelected, borderColor: colors.border }]}
+              >
                 <View style={styles.itemHeader}>
-                  <View style={[styles.categoryIcon, { backgroundColor: colors.primaryLight }]}>
-                    <Ionicons name={CATEGORY_ICONS[item.category] ?? 'cube-outline'} size={23} color={colors.primary} />
+                  <View style={[styles.categoryIcon, { backgroundColor: colors.backgroundSelected }]}>
+                    <Ionicons name={CATEGORY_ICONS[item.category] ?? 'cube-outline'} size={32} color={colors.primary} />
                   </View>
                   <View style={styles.itemHeading}>
                     <Text style={[styles.itemName, { color: colors.text }]}>{item.name}</Text>
                     <Text style={[styles.itemCategory, { color: colors.textSecondary }]}>{item.category}</Text>
+                    <View style={[styles.itemStatus, { backgroundColor: status.color + '18' }]}>
+                      <Ionicons name={status.icon} size={15} color={status.color} />
+                      <Text style={[styles.itemStatusText, { color: status.color }]}>{status.label}</Text>
+                    </View>
                   </View>
                   <TouchableOpacity
                     style={styles.deleteButton}
@@ -431,6 +487,23 @@ export default function EssentialsScreen() {
                   >
                     <Ionicons name="trash-outline" size={22} color={colors.danger} />
                   </TouchableOpacity>
+                </View>
+
+                <View style={styles.stockSummary}>
+                  <View style={styles.stockSummaryHeader}>
+                    <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>Estimated supply</Text>
+                    <Text style={[styles.daysValue, { color: status.color }]}>
+                      {days} {days === 1 ? 'day' : 'days'} left
+                    </Text>
+                  </View>
+                  <View style={[styles.progressTrack, { backgroundColor: colors.backgroundSelected }]}>
+                    <View
+                      style={[
+                        styles.progressFill,
+                        { backgroundColor: status.color, width: `${remainingPercent}%` },
+                      ]}
+                    />
+                  </View>
                 </View>
 
                 <View style={styles.metricRow}>
@@ -482,18 +555,13 @@ export default function EssentialsScreen() {
                       </TouchableOpacity>
                     </View>
                   </View>
-                  <View style={styles.metric}>
-                    <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>Days left</Text>
-                    <Text style={[styles.daysValue, { color: colors.text }]}>
-                      {days} {days === 1 ? 'day' : 'days'}
-                    </Text>
-                  </View>
                 </View>
 
-                <View style={[styles.statusRow, { backgroundColor: status.color + '18' }]}>
-                  <Ionicons name={status.icon} size={22} color={status.color} />
-                  <Text style={[styles.statusText, { color: colors.text }]}>{status.label}</Text>
-                  <Text style={[styles.reminderText, { color: colors.textSecondary }]}>· Remind {item.remindDaysBefore} days before</Text>
+                <View style={[styles.reminderRow, { borderTopColor: colors.border }]}>
+                  <Ionicons name="notifications-outline" size={18} color={colors.textSecondary} />
+                  <Text style={[styles.reminderText, { color: colors.textSecondary }]}>
+                    Refill reminder {item.remindDaysBefore} days before it runs out
+                  </Text>
                 </View>
 
                 <View style={styles.itemActions}>
@@ -519,7 +587,7 @@ export default function EssentialsScreen() {
                     <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Buy / search</Text>
                   </TouchableOpacity>
                 </View>
-              </View>
+              </Animated.View>
             );
           })
         )}
@@ -671,7 +739,7 @@ export default function EssentialsScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={`Search ${STORE_OPTIONS[key].name}`}
               >
-                <Ionicons name="open-outline" size={22} color={colors.primary} />
+                <StoreLogo store={key} />
                 <Text style={[styles.storeOptionText, { color: colors.text }]}>{STORE_OPTIONS[key].name}</Text>
                 <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
               </TouchableOpacity>
@@ -742,9 +810,9 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: 18, paddingTop: 12, gap: 14 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   headerText: { flex: 1 },
-  title: { fontSize: 28, lineHeight: 36, fontWeight: '800' },
-  subtitle: { fontSize: 15, lineHeight: 22 },
-  addButton: { minHeight: 56, paddingHorizontal: 15, borderRadius: 15, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  title: { fontSize: 27, lineHeight: 34, fontWeight: '700', fontFamily: Fonts.sans },
+  subtitle: { fontSize: 15, lineHeight: 22, fontFamily: Fonts.sans },
+  addButton: { minHeight: 52, paddingHorizontal: 16, borderRadius: 18, flexDirection: 'row', alignItems: 'center', gap: 4 },
   addButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
   safetyCard: { borderWidth: 1, borderRadius: 16, padding: 13, flexDirection: 'row', alignItems: 'flex-start', gap: 9 },
   safetyTextGroup: { flex: 1, gap: 5 },
@@ -758,26 +826,31 @@ const styles = StyleSheet.create({
   suggestions: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 3 },
   suggestion: { minHeight: 56, borderWidth: 1.5, borderRadius: 15, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 7 },
   suggestionText: { fontSize: 14, lineHeight: 20, fontWeight: '700' },
-  itemCard: { borderWidth: 1, borderRadius: 18, padding: 15, gap: 13 },
-  itemHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  categoryIcon: { width: 46, height: 46, borderRadius: 15, justifyContent: 'center', alignItems: 'center' },
+  itemCard: { borderWidth: 0, borderRadius: 24, padding: 17, gap: 15, shadowColor: '#171717', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.035, shadowRadius: 12, elevation: 1 },
+  itemHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  categoryIcon: { width: 68, height: 78, borderRadius: 19, justifyContent: 'center', alignItems: 'center' },
   itemHeading: { flex: 1 },
-  itemName: { fontSize: 17, lineHeight: 24, fontWeight: '700' },
-  itemCategory: { fontSize: 13, lineHeight: 19 },
-  deleteButton: { width: 56, height: 56, alignItems: 'center', justifyContent: 'center' },
-  metricRow: { flexDirection: 'column', alignItems: 'stretch', gap: 14 },
-  metric: { width: '100%', gap: 6 },
-  metricLabel: { fontSize: 15, lineHeight: 21, fontWeight: '600' },
-  unitControls: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  stepButton: { width: 56, height: 56, borderWidth: 1, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  unitValue: { minWidth: 28, textAlign: 'center', fontSize: 17, fontWeight: '800' },
-  daysValue: { fontSize: 18, lineHeight: 25, fontWeight: '800' },
-  statusRow: { minHeight: 48, borderRadius: 12, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', gap: 7 },
-  statusText: { fontSize: 15, lineHeight: 21, fontWeight: '800' },
-  reminderText: { fontSize: 13, lineHeight: 18, flexShrink: 1 },
-  itemActions: { flexDirection: 'row', gap: 8 },
-  secondaryButton: { minHeight: 56, flex: 1, borderWidth: 1, borderRadius: 14, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
-  secondaryButtonText: { fontSize: 14, lineHeight: 18, fontWeight: '700' },
+  itemName: { fontSize: 18, lineHeight: 24, fontWeight: '700', fontFamily: Fonts.sans },
+  itemCategory: { fontSize: 13, lineHeight: 19, fontFamily: Fonts.sans },
+  itemStatus: { alignSelf: 'flex-start', marginTop: 6, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  itemStatusText: { fontSize: 12, lineHeight: 16, fontWeight: '700', fontFamily: Fonts.sans },
+  deleteButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  stockSummary: { gap: 8 },
+  stockSummaryHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  progressTrack: { height: 8, borderRadius: 5, overflow: 'hidden' },
+  progressFill: { height: 8, borderRadius: 5 },
+  metricRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: 14 },
+  metric: { flex: 1, minWidth: 130, gap: 7 },
+  metricLabel: { fontSize: 14, lineHeight: 19, fontWeight: '600', fontFamily: Fonts.sans },
+  unitControls: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  stepButton: { width: 38, height: 38, borderWidth: 1, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  unitValue: { minWidth: 30, textAlign: 'center', fontSize: 16, fontWeight: '700', fontFamily: Fonts.sans },
+  daysValue: { fontSize: 16, lineHeight: 22, fontWeight: '700', fontFamily: Fonts.sans },
+  reminderRow: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 12, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  reminderText: { fontSize: 13, lineHeight: 19, flexShrink: 1, fontFamily: Fonts.sans },
+  itemActions: { flexDirection: 'row', gap: 9 },
+  secondaryButton: { minHeight: 48, flex: 1, borderWidth: 1, borderRadius: 17, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  secondaryButtonText: { fontSize: 14, lineHeight: 19, fontWeight: '700', fontFamily: Fonts.sans },
   modalScreen: { flex: 1 },
   modalContent: { padding: 18, gap: 14, paddingBottom: 28 },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
@@ -793,11 +866,18 @@ const styles = StyleSheet.create({
   reminderOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   reminderChip: { minHeight: 56, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center' },
   filterText: { fontSize: 15, lineHeight: 20, fontWeight: '600' },
-  saveButton: { minHeight: 60, borderRadius: 15, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
+  saveButton: { minHeight: 56, borderRadius: 18, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
   saveButtonText: { color: '#FFFFFF', fontSize: 18, lineHeight: 24, fontWeight: '800' },
   backdrop: { flex: 1, backgroundColor: '#00000080', justifyContent: 'center', padding: 18 },
   dialog: { borderRadius: 22, padding: 20, gap: 12 },
   cancelButton: { minHeight: 56, borderWidth: 1, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
-  storeOption: { minHeight: 60, borderWidth: 1, borderRadius: 15, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  storeOptionText: { flex: 1, fontSize: 16, lineHeight: 22, fontWeight: '700' },
+  storeOption: { minHeight: 60, borderWidth: 1, borderRadius: 15, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  storeLogo: { width: 82, height: 38, alignItems: 'center', justifyContent: 'center' },
+  amazonWordmark: { color: '#111111', fontSize: 19, lineHeight: 23, fontWeight: '800', letterSpacing: -1 },
+  amazonSmile: { position: 'absolute', bottom: 1, left: 13 },
+  flipkartBag: { width: 26, height: 27, borderRadius: 5, backgroundColor: '#FFE500', alignItems: 'center', justifyContent: 'center' },
+  flipkartF: { color: '#2874F0', fontSize: 19, lineHeight: 23, fontWeight: '900', fontStyle: 'italic' },
+  flipkartWordmark: { color: '#2874F0', fontSize: 10, lineHeight: 12, fontWeight: '800' },
+  googleLogo: { flexDirection: 'row' },
+  storeOptionText: { flex: 1, fontSize: 15, lineHeight: 20, fontWeight: '700' },
 });

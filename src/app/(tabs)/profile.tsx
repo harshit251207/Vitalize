@@ -8,6 +8,7 @@ import { VitalsService } from '@/services/vitalsService';
 import { UserProfile } from '@/types';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { WellnessBanner } from '@/components/WellnessBanner';
 
 export default function ProfileScreen() {
   const { user, logout } = useAuth();
@@ -32,8 +33,14 @@ export default function ProfileScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <Text style={[styles.screenTitle, { color: colors.text }]}>Profile & Settings</Text>
 
+        <WellnessBanner
+          variant="profile"
+          title="Your care, your way"
+          subtitle="Keep your health details close at hand."
+        />
+
         {/* User Hero Card */}
-        <View style={[styles.userCard, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
+        <View style={[styles.userCard, { backgroundColor: colors.backgroundSelected, borderColor: colors.border }]}>
           <View style={[styles.avatarCircle, { backgroundColor: colors.primary }]}>
             <Text style={styles.avatarInitial}>{initial}</Text>
           </View>
@@ -43,7 +50,7 @@ export default function ProfileScreen() {
         </View>
 
         {/* Disability Category Card */}
-        <View style={[styles.sectionCard, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
+        <View style={[styles.sectionCard, { backgroundColor: colors.backgroundSelected, borderColor: colors.border }]}>
           <View style={styles.sectionHeader}>
             <Ionicons name="medical" size={22} color={colors.primary} style={{ marginRight: 8 }} />
             <Text style={[styles.sectionTitle, { color: colors.text }]}>Disability Classification</Text>
@@ -90,7 +97,7 @@ export default function ProfileScreen() {
 
         {/* Calorie Calculator Profile Info */}
         {profile?.calorieCalculator && (
-          <View style={[styles.sectionCard, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
+          <View style={[styles.sectionCard, { backgroundColor: colors.backgroundSelected, borderColor: colors.border }]}>
             <View style={styles.sectionHeader}>
               <Ionicons name="flame" size={22} color={colors.primary} style={{ marginRight: 8 }} />
               <Text style={[styles.sectionTitle, { color: colors.text }]}>Nutrition Parameters</Text>
@@ -118,7 +125,7 @@ export default function ProfileScreen() {
         )}
 
         {/* Healthy Ranges Info Card */}
-        <View style={[styles.sectionCard, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
+        <View style={[styles.sectionCard, { backgroundColor: colors.backgroundSelected, borderColor: colors.border }]}>
           <View style={styles.sectionHeader}>
             <Ionicons name="shield-checkmark" size={22} color={colors.success} style={{ marginRight: 8 }} />
             <Text style={[styles.sectionTitle, { color: colors.text }]}>Target Healthy Ranges</Text>

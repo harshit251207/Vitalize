@@ -5,7 +5,7 @@ import { Tabs } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const TAB_HEIGHT = 56;
+const TAB_HEIGHT = 64;
 
 export default function AppTabs() {
   const colors = useTheme();
@@ -16,27 +16,33 @@ export default function AppTabs() {
       <Tabs
         screenOptions={{
           headerShown: false,
-          tabBarActiveTintColor: colors.primary,
+          animation: 'fade',
+          tabBarActiveTintColor: colors.text,
           tabBarInactiveTintColor: colors.textSecondary,
           tabBarStyle: {
             backgroundColor: colors.backgroundElement,
             borderTopColor: colors.border,
+            borderTopWidth: StyleSheet.hairlineWidth,
             height: TAB_HEIGHT + insets.bottom,
             paddingBottom: insets.bottom,
-            paddingTop: 8,
+            paddingTop: 7,
+            elevation: 0,
+            shadowOpacity: 0,
           },
           tabBarLabelStyle: {
-            fontSize: 12,
+            fontSize: 11,
             fontWeight: '600',
+            marginTop: 1,
           },
+          tabBarHideOnKeyboard: true,
         }}
       >
         <Tabs.Screen
           name="index"
           options={{
             title: 'Home',
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="pulse-outline" size={size || 24} color={color} />
+            tabBarIcon: ({ color, focused }) => (
+              <Ionicons name={focused ? 'pulse' : 'pulse-outline'} size={21} color={color} />
             ),
           }}
         />
@@ -44,8 +50,8 @@ export default function AppTabs() {
           name="plan"
           options={{
             title: 'Plans',
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="fitness-outline" size={size || 24} color={color} />
+            tabBarIcon: ({ color, focused }) => (
+              <Ionicons name={focused ? 'fitness' : 'fitness-outline'} size={21} color={color} />
             ),
           }}
         />
@@ -54,8 +60,8 @@ export default function AppTabs() {
           options={{
             title: 'Community',
             tabBarAccessibilityLabel: 'Community feed',
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="people-outline" size={size || 24} color={color} />
+            tabBarIcon: ({ color, focused }) => (
+              <Ionicons name={focused ? 'people' : 'people-outline'} size={21} color={color} />
             ),
           }}
         />
@@ -64,8 +70,8 @@ export default function AppTabs() {
           options={{
             title: 'Essentials',
             tabBarAccessibilityLabel: 'Shopping essentials and refills',
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="bag-handle-outline" size={size || 24} color={color} />
+            tabBarIcon: ({ color, focused }) => (
+              <Ionicons name={focused ? 'bag-handle' : 'bag-handle-outline'} size={21} color={color} />
             ),
           }}
         />
@@ -75,8 +81,8 @@ export default function AppTabs() {
           name="profile"
           options={{
             title: 'Profile',
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="person-circle-outline" size={size || 24} color={color} />
+            tabBarIcon: ({ color, focused }) => (
+              <Ionicons name={focused ? 'person-circle' : 'person-circle-outline'} size={21} color={color} />
             ),
           }}
         />

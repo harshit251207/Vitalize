@@ -17,7 +17,6 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/store/AuthContext';
 import { useTheme } from '@/hooks/use-theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
 import { processAgentMessage, emptyBotReply, type BotReply } from '@/services/ai/vitalizeAgent';
 import { VoiceInputButton } from '@/components/chat/VoiceInputButton';
 import { BotMessage } from '@/components/chat/BotMessage';
@@ -46,10 +45,9 @@ const QUICK_SUGGESTIONS = [
 export default function ChatScreen() {
   const router = useRouter();
   const colors = useTheme();
-  const scheme = useColorScheme();
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
-  const chatBg = scheme === 'light' ? colors.background : '#0B1220';
+  const chatBg = colors.background;
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
@@ -284,7 +282,7 @@ export default function ChatScreen() {
                     style={[
                       styles.thinkingBubble,
                       {
-                        backgroundColor: scheme === 'light' ? colors.backgroundElement : '#1A2436',
+                        backgroundColor: colors.backgroundElement,
                         borderColor: colors.border,
                       },
                     ]}
@@ -390,7 +388,7 @@ export default function ChatScreen() {
           style={[
             styles.composerContainer,
             {
-              backgroundColor: scheme === 'light' ? colors.backgroundElement : '#1A2436',
+              backgroundColor: colors.backgroundElement,
               borderTopColor: colors.border,
               paddingBottom: Math.max(8, insets.bottom),
             },

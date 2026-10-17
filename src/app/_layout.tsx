@@ -1,6 +1,5 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router/react-navigation';
+import { DefaultTheme, ThemeProvider } from 'expo-router/react-navigation';
 import * as SplashScreen from 'expo-splash-screen';
-import { useColorScheme } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { useEffect } from 'react';
 
@@ -13,7 +12,6 @@ function RootLayoutNav() {
   const { user, isLoading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
-  const colorScheme = useColorScheme();
 
   useEffect(() => {
     if (isLoading) return;
@@ -30,9 +28,9 @@ function RootLayoutNav() {
   }, [user, isLoading, segments, router]);
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+    <ThemeProvider value={DefaultTheme}>
       <AnimatedSplashOverlay />
-      <Stack screenOptions={{ headerShown: false }}>
+      <Stack screenOptions={{ headerShown: false, animation: 'fade_from_bottom' }}>
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="vitals-entry" options={{ presentation: 'modal' }} />

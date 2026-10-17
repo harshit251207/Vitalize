@@ -4,6 +4,8 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { loginUser } from '@/services/authService';
 import { useTheme } from '@/hooks/use-theme';
+import { Fonts } from '@/constants/theme';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 
 function getLoginErrorMessage(error: unknown): string {
   const code = (error as { code?: string }).code?.replace('auth/', '');
@@ -49,7 +51,7 @@ export default function LoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-        <View style={styles.headerSection}>
+        <Animated.View entering={FadeInDown.duration(450)} style={styles.headerSection}>
           <View style={[styles.logoBadge, { backgroundColor: colors.primary + '18' }]}>
             <Ionicons name="pulse" size={54} color={colors.primary} />
           </View>
@@ -57,9 +59,9 @@ export default function LoginScreen() {
           <Text style={[styles.brandTagline, { color: colors.textSecondary }]}>
             Health & Mobility Monitoring
           </Text>
-        </View>
+        </Animated.View>
 
-        <View style={[styles.card, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
+        <Animated.View entering={FadeInDown.delay(100).duration(500)} style={[styles.card, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
           <Text style={[styles.cardTitle, { color: colors.text }]}>Welcome Back</Text>
           <Text style={[styles.cardSubtitle, { color: colors.textSecondary }]}>
             Log in to access your vitals & plans
@@ -67,7 +69,7 @@ export default function LoginScreen() {
 
           <View style={styles.inputGroup}>
             <Text style={[styles.inputLabel, { color: colors.text }]}>Email</Text>
-            <View style={[styles.inputWrapper, { borderColor: colors.border, backgroundColor: colors.background }]}>
+            <View style={[styles.inputWrapper, { borderColor: colors.border, backgroundColor: colors.backgroundSelected }]}>
               <Ionicons name="mail-outline" size={22} color={colors.textSecondary} style={styles.inputIcon} />
               <TextInput
                 style={[styles.input, { color: colors.text }]}
@@ -85,7 +87,7 @@ export default function LoginScreen() {
 
           <View style={styles.inputGroup}>
             <Text style={[styles.inputLabel, { color: colors.text }]}>Password</Text>
-            <View style={[styles.inputWrapper, { borderColor: colors.border, backgroundColor: colors.background }]}>
+            <View style={[styles.inputWrapper, { borderColor: colors.border, backgroundColor: colors.backgroundSelected }]}>
               <Ionicons name="lock-closed-outline" size={22} color={colors.textSecondary} style={styles.inputIcon} />
               <TextInput
                 style={[styles.input, { color: colors.text }]}
@@ -119,16 +121,16 @@ export default function LoginScreen() {
               <Ionicons name="arrow-forward" size={22} color="#FFFFFF" style={{ marginLeft: 8 }} />
             </>}
           </TouchableOpacity>
-        </View>
+        </Animated.View>
 
-        <TouchableOpacity 
+        <TouchableOpacity
           onPress={() => router.push('/(auth)/signup')}
           style={styles.linkButton}
           accessibilityRole="button"
           accessibilityLabel="Go to Signup"
         >
           <Text style={[styles.linkText, { color: colors.textSecondary }]}>
-            Don't have an account? <Text style={{ color: colors.primary, fontWeight: 'bold' }}>Sign Up</Text>
+            Don&apos;t have an account? <Text style={{ color: colors.primary, fontWeight: 'bold' }}>Sign Up</Text>
           </Text>
         </TouchableOpacity>
       </ScrollView>
@@ -141,6 +143,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'center',
     padding: 24,
+    backgroundColor: '#FFFFFF',
   },
   headerSection: {
     alignItems: 'center',
@@ -158,6 +161,7 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: '800',
     letterSpacing: -0.5,
+    fontFamily: Fonts.serif,
   },
   brandTagline: {
     fontSize: 16,
@@ -166,13 +170,19 @@ const styles = StyleSheet.create({
   },
   card: {
     padding: 24,
-    borderRadius: 24,
+    borderRadius: 26,
     borderWidth: 1,
+    shadowColor: '#171717',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.04,
+    shadowRadius: 16,
+    elevation: 1,
   },
   cardTitle: {
     fontSize: 22,
     fontWeight: '700',
     marginBottom: 4,
+    fontFamily: Fonts.serif,
   },
   cardSubtitle: {
     fontSize: 14,
@@ -190,8 +200,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     height: 60,
-    borderWidth: 1.5,
-    borderRadius: 14,
+    borderWidth: 0,
+    borderRadius: 18,
     paddingHorizontal: 16,
   },
   inputIcon: {
@@ -203,7 +213,7 @@ const styles = StyleSheet.create({
   },
   button: {
     height: 60,
-    borderRadius: 14,
+    borderRadius: 18,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',

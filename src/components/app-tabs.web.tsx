@@ -1,123 +1,145 @@
+import { Ionicons } from '@expo/vector-icons';
 import {
-  Tabs,
   TabList,
-  TabTrigger,
-  TabSlot,
-  TabTriggerSlotProps,
   TabListProps,
+  TabSlot,
+  TabTrigger,
+  TabTriggerSlotProps,
+  Tabs,
 } from 'expo-router/ui';
-import { SymbolView } from 'expo-symbols';
-import { Pressable, View, StyleSheet } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import Animated, { FadeIn } from 'react-native-reanimated';
+import { usePathname } from 'expo-router';
 
-import { ExternalLink } from './external-link';
-import { ThemedText } from './themed-text';
-import { ThemedView } from './themed-view';
-
-import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { FloatingChatButton } from './chat/FloatingChatButton';
 
 export default function AppTabs() {
+  const pathname = usePathname();
+
   return (
-    <View style={{ flex: 1, width: '100%', height: '100%' }}>
+    <View style={styles.container}>
       <Tabs>
-        <TabSlot style={{ height: '100%' }} />
+        <Animated.View key={pathname} entering={FadeIn.duration(220)} style={styles.content}>
+          <TabSlot style={styles.content} />
+        </Animated.View>
         <TabList asChild>
           <CustomTabList>
-            <TabTrigger name="home" href="/" asChild>
-              <TabButton>Home</TabButton>
+            <TabTrigger name="index" href="/" asChild>
+              <TabButton icon="pulse-outline">Home</TabButton>
             </TabTrigger>
             <TabTrigger name="plan" href="/plan" asChild>
-              <TabButton>My Plan</TabButton>
+              <TabButton icon="fitness-outline">Plans</TabButton>
+            </TabTrigger>
+            <TabTrigger name="community" href="/community" asChild>
+              <TabButton icon="people-outline">Community</TabButton>
+            </TabTrigger>
+            <TabTrigger name="essentials" href="/essentials" asChild>
+              <TabButton icon="bag-handle-outline">Essentials</TabButton>
             </TabTrigger>
             <TabTrigger name="profile" href="/profile" asChild>
-              <TabButton>Profile</TabButton>
+              <TabButton icon="person-circle-outline">Profile</TabButton>
             </TabTrigger>
           </CustomTabList>
         </TabList>
       </Tabs>
-      <FloatingChatButton bottomInset={80} />
+      <FloatingChatButton bottomInset={104} />
     </View>
   );
 }
 
-export function TabButton({ children, isFocused, ...props }: TabTriggerSlotProps) {
+interface TabButtonProps extends TabTriggerSlotProps {
+  icon: keyof typeof Ionicons.glyphMap;
+}
+
+function TabButton({ children, icon, isFocused, ...props }: TabButtonProps) {
+  const colors = useTheme();
+
   return (
-    <Pressable {...props} style={({ pressed }) => pressed && styles.pressed}>
-      <ThemedView
-        type={isFocused ? 'backgroundSelected' : 'backgroundElement'}
-        style={styles.tabButtonView}>
-        <ThemedText type="small" themeColor={isFocused ? 'text' : 'textSecondary'}>
+    <Pressable
+      {...props}
+      style={({ pressed }) => [styles.tabButton, pressed && styles.pressed]}
+    >
+      <View style={styles.tabButtonContent}>
+        <Ionicons name={icon} size={21} color={isFocused ? colors.text : colors.textSecondary} />
+        <Text style={[styles.tabLabel, { color: isFocused ? colors.text : colors.textSecondary }]}>
           {children}
-        </ThemedText>
-      </ThemedView>
+        </Text>
+      </View>
     </Pressable>
   );
 }
 
-export function CustomTabList(props: TabListProps) {
+function CustomTabList(props: TabListProps) {
   const colors = useTheme();
 
   return (
-    <View {...props} style={styles.tabListContainer}>
-      <ThemedView type="backgroundElement" style={styles.innerContainer}>
-        <ThemedText type="smallBold" style={styles.brandText}>
-          Expo Starter
-        </ThemedText>
-
+    <View {...props} style={[props.style, styles.tabListContainer]}>
+      <View
+        style={[
+          styles.innerContainer,
+          { backgroundColor: colors.backgroundElement, borderColor: colors.border },
+        ]}
+      >
         {props.children}
-
-        <ExternalLink href="https://docs.expo.dev" asChild>
-          <Pressable style={styles.externalPressable}>
-            <ThemedText type="link">Docs</ThemedText>
-            <SymbolView
-              tintColor={colors.text}
-              name="arrow.up.right.square"
-              size={12}
-              fallback={<ThemedText type="small">↗</ThemedText>}
-            />
-          </Pressable>
-        </ExternalLink>
-      </ThemedView>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  content: {
+    flex: 1,
+    paddingBottom: 88,
+  },
   tabListContainer: {
     position: 'absolute',
-    width: '100%',
-    padding: Spacing.three,
-    justifyContent: 'center',
+    left: 0,
+    right: 0,
+    bottom: 0,
     alignItems: 'center',
-    flexDirection: 'row',
   },
   innerContainer: {
-    paddingVertical: Spacing.two,
-    paddingHorizontal: Spacing.five,
-    borderRadius: Spacing.five,
+    width: '100%',
+    maxWidth: 800,
+    minHeight: 78,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderRadius: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    flexGrow: 1,
-    gap: Spacing.two,
-    maxWidth: MaxContentWidth,
+    justifyContent: 'space-around',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 8,
+    elevation: 2,
   },
-  brandText: {
-    marginRight: 'auto',
+  tabButton: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabButtonContent: {
+    minWidth: 58,
+    minHeight: 56,
+    paddingHorizontal: 8,
+    borderRadius: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
+  tabLabel: {
+    fontSize: 10,
+    fontWeight: '600',
   },
   pressed: {
     opacity: 0.7,
-  },
-  tabButtonView: {
-    paddingVertical: Spacing.one,
-    paddingHorizontal: Spacing.three,
-    borderRadius: Spacing.three,
-  },
-  externalPressable: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: Spacing.one,
-    marginLeft: Spacing.three,
   },
 });

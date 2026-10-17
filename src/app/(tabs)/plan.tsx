@@ -6,6 +6,7 @@ import { CATEGORY_LABELS } from '@/lib/categoryStorage';
 import { useCategory } from '@/store/AuthContext';
 import { useTheme } from '@/hooks/use-theme';
 import { useWorkoutProgress } from '@/hooks/use-workout-progress';
+import { WellnessBanner } from '@/components/WellnessBanner';
 
 export default function PlansScreen() {
   const router = useRouter();
@@ -24,8 +25,14 @@ export default function PlansScreen() {
             : 'Choose a category to unlock your personalized exercise and diet plans.'}
         </Text>
 
+        <WellnessBanner
+          variant="plans"
+          title="Progress at your pace"
+          subtitle="Small, steady steps make a difference."
+        />
+
         {category ? (
-          <View style={[styles.progressCard, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
+          <View style={[styles.progressCard, { backgroundColor: colors.backgroundSelected, borderColor: colors.border }]}>
             <View style={styles.progressRow}>
               <View style={[styles.progressIcon, { backgroundColor: colors.primary + '18' }]}>
                 <Ionicons name="fitness" size={22} color={colors.primary} />
@@ -54,7 +61,7 @@ export default function PlansScreen() {
         )}
 
         <TouchableOpacity
-          style={[styles.sectionCard, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}
+          style={[styles.sectionCard, { backgroundColor: colors.backgroundSelected, borderColor: colors.border }]}
           onPress={() => router.push(category ? '/exercise' : '/report-upload')}
           activeOpacity={0.85}
           accessibilityRole="button"
@@ -78,7 +85,7 @@ export default function PlansScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.sectionCard, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}
+          style={[styles.sectionCard, { backgroundColor: colors.backgroundSelected, borderColor: colors.border }]}
           onPress={() => router.push(category ? '/diet' : '/report-upload')}
           activeOpacity={0.85}
           accessibilityRole="button"
@@ -117,7 +124,7 @@ const styles = StyleSheet.create({
   eyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 1.2 },
   title: { fontSize: 32, fontWeight: '900', marginTop: 5 },
   subtitle: { fontSize: 15, lineHeight: 22, marginTop: 6, marginBottom: 22 },
-  progressCard: { padding: 16, borderRadius: 18, borderWidth: 1, marginBottom: 14 },
+  progressCard: { padding: 16, borderRadius: 22, borderWidth: 0, marginBottom: 14 },
   progressRow: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   progressIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   progressLabels: { flex: 1 },
@@ -129,8 +136,8 @@ const styles = StyleSheet.create({
   sectionCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: 20,
+    borderWidth: 0,
+    borderRadius: 22,
     padding: 17,
     marginBottom: 12,
     gap: 13,
