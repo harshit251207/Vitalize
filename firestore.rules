@@ -9,6 +9,36 @@ service cloud.firestore {
           && request.auth.uid == userId;
       }
 
+      match /autoBpReadings/{readingId} {
+        allow read: if request.auth != null
+          && request.auth.uid == userId;
+        allow create, update: if request.auth != null
+          && request.auth.uid == userId
+          && request.resource.data.keys().hasOnly([
+            'systolic', 'diastolic', 'measuredAt', 'source',
+            'deviceSourceApp', 'syncedAt', 'hidden'
+          ])
+          && request.resource.data.keys().hasAll([
+            'systolic', 'diastolic', 'measuredAt', 'source',
+            'deviceSourceApp', 'syncedAt'
+          ])
+          && request.resource.data.systolic is number
+          && request.resource.data.systolic >= 40
+          && request.resource.data.systolic <= 300
+          && request.resource.data.diastolic is number
+          && request.resource.data.diastolic >= 20
+          && request.resource.data.diastolic <= 200
+          && request.resource.data.systolic > request.resource.data.diastolic
+          && request.resource.data.measuredAt is timestamp
+          && request.resource.data.source == 'health_connect'
+          && request.resource.data.deviceSourceApp is string
+          && request.resource.data.syncedAt is timestamp
+          && (
+            !('hidden' in request.resource.data)
+            || request.resource.data.hidden is bool
+          );
+      }
+
       match /essentials/{itemId} {
         allow read, delete: if request.auth != null && request.auth.uid == userId;
         allow create, update: if request.auth != null

@@ -14,12 +14,13 @@ import { LineChart } from 'react-native-gifted-charts';
 
 import { useAuth } from '@/store/AuthContext';
 import { NotAuthenticatedError, getVitalHistoryForPeriod } from '@/services/vitalsService';
+import { getAutoBPReadings } from '@/services/autoBpService';
 import { Vitals } from '@/types';
+import type { BPReading } from '@/types/bpReading';
 import { useTheme } from '@/hooks/use-theme';
 import {
   type TimePeriod,
   type BPAnalyticsResult,
-  type BPReading,
   computeBPAnalytics,
   extractBPReadings,
   BP_REFERENCE,
@@ -83,6 +84,8 @@ export default function BPAnalyticsScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [vitals, setVitals] = useState<Vitals[]>([]);
+  const [automaticReadings, setAutomaticReadings] = useState<BPReading[]>([]);
+  const [automaticReadingsError, setAutomaticReadingsError] = useState<string | null>(null);
   const [analytics, setAnalytics] = useState<BPAnalyticsResult | null>(null);
 
   const loadData = async (selectedPeriod: TimePeriod) => {
@@ -96,13 +99,23 @@ export default function BPAnalyticsScreen() {
 
     setIsLoading(true);
     setLoadError(null);
+    setAutomaticReadingsError(null);
     try {
       const days = selectedPeriod === '7d' ? 7 : 30;
+      const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
       const data = await getVitalHistoryForPeriod(days);
       setVitals(data);
-      setAnalytics(computeBPAnalytics(data, selectedPeriod));
+      let automatic: BPReading[] = [];
+      try {
+        automatic = await getAutoBPReadings(user, since);
+      } catch {
+        setAutomaticReadingsError('Automatic BP readings could not be loaded. Manual readings are still shown.');
+      }
+      setAutomaticReadings(automatic);
+      setAnalytics(computeBPAnalytics(data, selectedPeriod, automatic));
     } catch (e) {
       setVitals([]);
+      setAutomaticReadings([]);
       setAnalytics(null);
       setLoadError(
         e instanceof NotAuthenticatedError
@@ -129,18 +142,18 @@ export default function BPAnalyticsScreen() {
   // -----------------------------------------------------------------------
   // Chart data
   // -----------------------------------------------------------------------
-  const bpReadings = extractBPReadings(vitals);
+  const bpReadings = extractBPReadings(vitals, automaticReadings);
 
   // Build gifted-charts line data
   const systolicData = bpReadings.map((r, i) => ({
     value: r.systolic,
-    label: i === 0 || i === bpReadings.length - 1 ? formatDate(r.recordedAt) : '',
+    label: i === 0 || i === bpReadings.length - 1 ? formatDate(r.measuredAt) : '',
     dataPointText: String(r.systolic),
   }));
 
   const diastolicData = bpReadings.map((r, i) => ({
     value: r.diastolic,
-    label: i === 0 || i === bpReadings.length - 1 ? formatDate(r.recordedAt) : '',
+    label: i === 0 || i === bpReadings.length - 1 ? formatDate(r.measuredAt) : '',
     dataPointText: String(r.diastolic),
   }));
 
@@ -238,7 +251,7 @@ export default function BPAnalyticsScreen() {
               </Text>
             </View>
             <Text style={[styles.latestDate, { color: colors.textSecondary }]}>
-              {formatDateTime(analytics.latestReading.recordedAt)}
+              {formatDateTime(analytics.latestReading.measuredAt)}
             </Text>
           </View>
         </View>
@@ -298,6 +311,11 @@ export default function BPAnalyticsScreen() {
         <Text style={[styles.chartSubtitle, { color: colors.textSecondary }]}>
           Systolic & Diastolic (mmHg)
         </Text>
+        {automaticReadingsError && (
+          <Text style={[styles.emptyHint, { color: colors.warning }]}>
+            {automaticReadingsError}
+          </Text>
+        )}
 
         {isLoading ? (
           <View style={styles.emptyChartState}>
@@ -582,7 +600,7 @@ export default function BPAnalyticsScreen() {
                       {ur.systolic}/{ur.diastolic} mmHg
                     </Text>
                     <Text style={[styles.unusualDate, { color: colors.textSecondary }]}>
-                      {formatDateTime(ur.recordedAt)}
+                      {formatDateTime(ur.measuredAt)}
                     </Text>
                   </View>
                   <Text style={[styles.unusualReason, { color: colors.warning }]}>

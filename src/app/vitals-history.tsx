@@ -1,31 +1,45 @@
-import React, { useState, useCallback } from 'react';
-import { StyleSheet, View, Text, ScrollView, Dimensions, TouchableOpacity, ActivityIndicator } from 'react-native';
+import React, { useState, useCallback, useMemo } from 'react';
+import { StyleSheet, View, Text, ScrollView, Dimensions, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { LineChart } from 'react-native-chart-kit';
 import { Ionicons } from '@expo/vector-icons';
 
 import { useAuth } from '@/store/AuthContext';
 import { NotAuthenticatedError, getVitalHistory } from '@/services/vitalsService';
+import { getAutoBPReadings } from '@/services/autoBpService';
+import { isHealthConnectSupportedPlatform, openHealthConnectAppSettings, openHealthConnectStore } from '@/services/healthConnectBP';
+import { useAutoBpSync } from '@/hooks/use-auto-bp-sync';
 import { Vitals } from '@/types';
+import type { BPReading } from '@/types/bpReading';
 import { useTheme } from '@/hooks/use-theme';
 
 const screenWidth = Dimensions.get('window').width;
 
 type MetricType = 'bp' | 'sugar' | 'hr' | 'weight';
 
+type HistoryRow =
+  | { kind: 'manual'; id: string; date: Date; reading: Vitals }
+  | { kind: 'auto'; id: string; date: Date; reading: BPReading };
+
 export default function VitalsHistoryScreen() {
   const { user } = useAuth();
   const router = useRouter();
   const colors = useTheme();
+  const autoBp = useAutoBpSync({ uid: user });
+  const syncNow = autoBp.syncNow;
   
   const [vitals, setVitals] = useState<Vitals[]>([]);
+  const [automaticReadings, setAutomaticReadings] = useState<BPReading[]>([]);
   const [selectedMetric, setSelectedMetric] = useState<MetricType>('bp');
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     if (!user) {
       setVitals([]);
+      setAutomaticReadings([]);
       setLoadError('Please sign in to view your vitals history.');
       setIsLoading(false);
       return;
@@ -33,12 +47,20 @@ export default function VitalsHistoryScreen() {
 
     setIsLoading(true);
     setLoadError(null);
+    setConnectionError(null);
     try {
       const data = await getVitalHistory();
       const sorted = data.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
       setVitals(sorted);
+      try {
+        setAutomaticReadings(await getAutoBPReadings(user));
+      } catch {
+        setAutomaticReadings([]);
+        setConnectionError('Could not load automatic BP readings. Your manual history is still available.');
+      }
     } catch (e) {
       setVitals([]);
+      setAutomaticReadings([]);
       setLoadError(
         e instanceof NotAuthenticatedError
           ? e.message
@@ -47,32 +69,119 @@ export default function VitalsHistoryScreen() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [user]);
 
   useFocusEffect(
     useCallback(() => {
-      loadData();
-    }, [user])
+      void loadData();
+      void syncNow().then(loadData);
+    }, [syncNow, loadData])
   );
 
-  const getMetricData = () => {
-    let key: keyof Vitals = 'bloodPressureSys';
-    if (selectedMetric === 'sugar') key = 'bloodSugar';
-    if (selectedMetric === 'hr') key = 'heartRate';
-    if (selectedMetric === 'weight') key = 'weight';
+  const historyRows = useMemo<HistoryRow[]>(
+    () =>
+      [
+        ...vitals.map((reading) => ({
+          kind: 'manual' as const,
+          id: reading.id,
+          date: new Date(reading.date),
+          reading,
+        })),
+        ...automaticReadings.map((reading) => ({
+          kind: 'auto' as const,
+          id: reading.id,
+          date: reading.measuredAt,
+          reading,
+        })),
+      ].sort((a, b) => b.date.getTime() - a.date.getTime()),
+    [automaticReadings, vitals],
+  );
 
-    const filtered = vitals.filter(v => v[key] !== undefined);
+  const refreshHistory = async () => {
+    setIsRefreshing(true);
+    try {
+      await autoBp.syncNow();
+      await loadData();
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const connectHealthConnect = async () => {
+    setConnectionError(null);
+    if (await autoBp.connect()) {
+      await autoBp.syncNow();
+      await loadData();
+    }
+  };
+
+  const openHealthConnectStorePage = async () => {
+    setConnectionError(null);
+    try {
+      await openHealthConnectStore();
+    } catch {
+      setConnectionError('Could not open Google Play. Search for Health Connect in the Play Store.');
+    }
+  };
+
+  const openHealthConnectSettingsPage = async () => {
+    setConnectionError(null);
+    try {
+      await openHealthConnectAppSettings();
+    } catch {
+      setConnectionError('Could not open Health Connect settings. Open it from your device settings.');
+    }
+  };
+
+  const getMetricData = () => {
+    const filtered =
+      selectedMetric === 'bp'
+        ? [
+            ...vitals
+              .filter(
+                (reading): reading is Vitals & { bloodPressureSys: number } =>
+                  typeof reading.bloodPressureSys === 'number',
+              )
+              .map((reading) => ({
+                date: new Date(reading.date),
+                value: reading.bloodPressureSys,
+              })),
+            ...automaticReadings.map((reading) => ({
+              date: reading.measuredAt,
+              value: reading.systolic,
+            })),
+          ].sort((a, b) => a.date.getTime() - b.date.getTime())
+        : vitals
+            .filter((reading) => {
+              const key: keyof Vitals =
+                selectedMetric === 'sugar'
+                  ? 'bloodSugar'
+                  : selectedMetric === 'hr'
+                    ? 'heartRate'
+                    : 'weight';
+              return reading[key] !== undefined;
+            })
+            .map((reading) => {
+              const key: keyof Vitals =
+                selectedMetric === 'sugar'
+                  ? 'bloodSugar'
+                  : selectedMetric === 'hr'
+                    ? 'heartRate'
+                    : 'weight';
+              return {
+                date: new Date(reading.date),
+                value: reading[key] as number,
+              };
+            });
     if (filtered.length === 0) return null;
 
-    const labels = filtered.map(v => {
-      const d = new Date(v.date);
-      return `${d.getMonth()+1}/${d.getDate()}`;
-    });
-    const data = filtered.map(v => v[key] as number);
+    const visible = filtered.slice(-7);
+    const labels = visible.map(({ date }) => `${date.getMonth() + 1}/${date.getDate()}`);
+    const data = visible.map(({ value }) => value);
 
     return {
-      labels: labels.slice(-7),
-      datasets: [{ data: data.slice(-7) }],
+      labels,
+      datasets: [{ data }],
     };
   };
 
@@ -108,7 +217,18 @@ export default function VitalsHistoryScreen() {
   };
 
   return (
-    <ScrollView style={[styles.container, { backgroundColor: colors.background }]} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      style={[styles.container, { backgroundColor: colors.background }]}
+      showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl
+          refreshing={isRefreshing}
+          onRefresh={() => void refreshHistory()}
+          tintColor={colors.primary}
+          colors={[colors.primary]}
+        />
+      }
+    >
       {/* Header */}
       <View style={styles.headerRow}>
         <TouchableOpacity style={[styles.backButton, { backgroundColor: colors.backgroundElement }]} onPress={() => router.back()}>
@@ -117,6 +237,68 @@ export default function VitalsHistoryScreen() {
         <Text style={[styles.title, { color: colors.text }]}>Vitals History</Text>
         <View style={{ width: 40 }} />
       </View>
+
+      {isHealthConnectSupportedPlatform && (
+        <View style={[styles.healthConnectCard, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
+          <View style={styles.healthConnectHeading}>
+            <View style={[styles.healthConnectIcon, { backgroundColor: colors.primaryLight }]}>
+              <Ionicons name="heart-circle-outline" size={22} color={colors.primary} />
+            </View>
+            <View style={styles.healthConnectCopy}>
+              <Text style={[styles.healthConnectTitle, { color: colors.text }]}>Connect Omron (via Health Connect)</Text>
+              <Text style={[styles.healthConnectStatus, { color: colors.textSecondary }]}>
+                {!autoBp.availability
+                  ? 'Checking Health Connect…'
+                  : autoBp.availability === 'not-installed'
+                    ? 'Health Connect is not installed.'
+                    : autoBp.availability === 'update-required'
+                      ? 'Health Connect needs an update.'
+                      : autoBp.availability !== 'available'
+                        ? 'Health Connect is not available on this device.'
+                        : autoBp.permissionGranted
+                          ? 'Connected'
+                          : 'Blood pressure permission needed'}
+              </Text>
+            </View>
+          </View>
+          <Text style={[styles.healthConnectHelp, { color: colors.textSecondary }]}>
+            Take a reading on your Omron monitor → make sure Omron Connect has synced it → tap Sync now.
+          </Text>
+          {autoBp.availability === 'not-installed' || autoBp.availability === 'update-required' ? (
+            <TouchableOpacity style={[styles.healthConnectButton, { backgroundColor: colors.primary }]} onPress={() => void openHealthConnectStorePage()}>
+              <Text style={styles.healthConnectButtonText}>
+                {autoBp.availability === 'update-required' ? 'Update Health Connect' : 'Get Health Connect'}
+              </Text>
+            </TouchableOpacity>
+          ) : autoBp.availability === 'available' && !autoBp.permissionGranted ? (
+            <View style={styles.healthConnectActions}>
+              <TouchableOpacity style={[styles.healthConnectButton, { backgroundColor: colors.primary }]} onPress={() => void connectHealthConnect()}>
+                <Text style={styles.healthConnectButtonText}>Connect</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.settingsButton, { borderColor: colors.border }]} onPress={openHealthConnectSettingsPage}>
+                <Text style={[styles.settingsButtonText, { color: colors.text }]}>Open Health Connect settings</Text>
+              </TouchableOpacity>
+            </View>
+          ) : autoBp.permissionGranted ? (
+            <View style={styles.syncRow}>
+              <TouchableOpacity
+                style={[styles.healthConnectButton, { backgroundColor: colors.primary, opacity: autoBp.isSyncing ? 0.65 : 1 }]}
+                onPress={() => void autoBp.syncNow().then(loadData)}
+                disabled={autoBp.isSyncing}
+              >
+                {autoBp.isSyncing ? <ActivityIndicator size="small" color="#FFFFFF" /> : null}
+                <Text style={styles.healthConnectButtonText}>{autoBp.isSyncing ? 'Syncing…' : 'Sync now'}</Text>
+              </TouchableOpacity>
+              <Text style={[styles.lastSyncText, { color: colors.textSecondary }]}>
+                {autoBp.lastSyncedAt ? `Last synced ${autoBp.lastSyncedAt.toLocaleString()}` : 'Not synced yet'}
+              </Text>
+            </View>
+          ) : null}
+          {(autoBp.syncError || connectionError) && (
+            <Text style={[styles.syncErrorText, { color: colors.danger }]}>{autoBp.syncError ?? connectionError}</Text>
+          )}
+        </View>
+      )}
 
       {/* Filter Tabs */}
       <View style={[styles.filterContainer, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
@@ -199,13 +381,35 @@ export default function VitalsHistoryScreen() {
             <Text style={styles.retryButtonText}>Try again</Text>
           </TouchableOpacity>
         </View>
-      ) : vitals.length > 0 ? (
-        vitals.slice().reverse().map((v) => {
-          const dateObj = new Date(v.date);
-          const dateStr = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      ) : historyRows.length > 0 ? (
+        historyRows.map((row) => {
+          const dateStr = row.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
+          if (row.kind === 'auto') {
+            const sourceLabel = row.reading.sourceApp?.toLowerCase().includes('omron') ? 'Omron' : 'Health Connect';
+            return (
+              <View key={`auto-${row.id}`} style={[styles.logCard, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
+                <View style={styles.logHeader}>
+                  <Ionicons name="calendar-outline" size={16} color={colors.primary} />
+                  <Text style={[styles.logDate, { color: colors.textSecondary }]}>{dateStr}</Text>
+                  <View style={[styles.autoBadge, { backgroundColor: colors.primaryLight }]}>
+                    <Ionicons name="sync-outline" size={12} color={colors.primary} />
+                    <Text style={[styles.autoBadgeText, { color: colors.primary }]}>{`Auto · ${sourceLabel}`}</Text>
+                  </View>
+                </View>
+                <View style={styles.logMetricsRow}>
+                  <View style={styles.logMetricPill}>
+                    <Text style={[styles.logMetricLabel, { color: colors.textSecondary }]}>BP:</Text>
+                    <Text style={[styles.logMetricValue, { color: colors.text }]}>{row.reading.systolic}/{row.reading.diastolic}</Text>
+                  </View>
+                </View>
+              </View>
+            );
+          }
+
+          const v = row.reading;
           return (
-            <View key={v.id} style={[styles.logCard, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
+            <View key={`manual-${row.id}`} style={[styles.logCard, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
               <View style={styles.logHeader}>
                 <Ionicons name="calendar-outline" size={16} color={colors.primary} />
                 <Text style={[styles.logDate, { color: colors.textSecondary }]}>{dateStr}</Text>
@@ -377,4 +581,27 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 20,
   },
+  healthConnectCard: {
+    borderRadius: 18,
+    padding: 15,
+    borderWidth: 1,
+    marginBottom: 20,
+    gap: 11,
+  },
+  healthConnectHeading: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  healthConnectIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  healthConnectCopy: { flex: 1, gap: 3 },
+  healthConnectTitle: { fontSize: 15, lineHeight: 20, fontWeight: '700' },
+  healthConnectStatus: { fontSize: 12, lineHeight: 17 },
+  healthConnectHelp: { fontSize: 12, lineHeight: 17 },
+  healthConnectActions: { gap: 8 },
+  healthConnectButton: { minHeight: 42, borderRadius: 12, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  healthConnectButtonText: { color: '#FFFFFF', fontSize: 13, fontWeight: '700' },
+  settingsButton: { minHeight: 40, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
+  settingsButtonText: { fontSize: 12, fontWeight: '600' },
+  syncRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  lastSyncText: { flex: 1, fontSize: 11, lineHeight: 15 },
+  syncErrorText: { fontSize: 11, lineHeight: 16 },
+  autoBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 9, marginLeft: 'auto' },
+  autoBadgeText: { fontSize: 10, lineHeight: 14, fontWeight: '700' },
 });

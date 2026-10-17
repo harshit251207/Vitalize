@@ -1,4 +1,5 @@
 import { Vitals } from '@/types';
+import type { BPHistoryReading, BPReading } from '@/types/bpReading';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -12,17 +13,8 @@ export type TrendDirection =
   | 'stable'
   | 'insufficient_data';
 
-/** A single BP reading with its date, used internally. */
-export interface BPReading {
-  systolic: number;
-  diastolic: number;
-  recordedAt: Date;
-}
-
 /** Describes why an individual reading was flagged as unusual. */
-export interface UnusualReading extends BPReading {
-  reason: string;
-}
+export type UnusualReading = BPHistoryReading & { reason: string };
 
 /** Reference-range classification counts. */
 export interface ReferenceRangeFlags {
@@ -45,7 +37,7 @@ export interface BPAnalyticsResult {
   readingCount: number;
 
   /** The most recent reading, or null if none. */
-  latestReading: BPReading | null;
+  latestReading: BPHistoryReading | null;
 
   /** Overall systolic trend over the period. */
   systolicTrend: TrendDirection;
@@ -106,8 +98,11 @@ const UNUSUAL_ZSCORE_THRESHOLD = 2.0;
  * Filters a `Vitals[]` down to readings that have both valid systolic and
  * diastolic values, sorted chronologically (oldest → newest).
  */
-export function extractBPReadings(vitals: Vitals[]): BPReading[] {
-  return vitals
+export function extractBPReadings(
+  vitals: Vitals[],
+  automaticReadings: BPReading[] = [],
+): BPHistoryReading[] {
+  const manualReadings = vitals
     .filter(
       (v): v is Vitals & { bloodPressureSys: number; bloodPressureDia: number } =>
         typeof v.bloodPressureSys === 'number' &&
@@ -118,12 +113,21 @@ export function extractBPReadings(vitals: Vitals[]): BPReading[] {
         v.date.length > 0,
     )
     .map((v) => ({
+      id: v.id,
       systolic: v.bloodPressureSys,
       diastolic: v.bloodPressureDia,
-      recordedAt: new Date(v.date),
+      measuredAt: new Date(v.date),
+      source: 'manual' as const,
     }))
-    .filter((r) => !isNaN(r.recordedAt.getTime()))
-    .sort((a, b) => a.recordedAt.getTime() - b.recordedAt.getTime());
+    .filter((r) => !isNaN(r.measuredAt.getTime()));
+
+  return [...manualReadings, ...automaticReadings]
+    .filter(
+      (reading) =>
+        Number.isFinite(reading.systolic) &&
+        Number.isFinite(reading.diastolic),
+    )
+    .sort((a, b) => a.measuredAt.getTime() - b.measuredAt.getTime());
 }
 
 // ---------------------------------------------------------------------------
@@ -199,7 +203,7 @@ function movingAverage(
 // Unusual-reading detection
 // ---------------------------------------------------------------------------
 
-function detectUnusualReadings(readings: BPReading[]): UnusualReading[] {
+function detectUnusualReadings(readings: BPHistoryReading[]): UnusualReading[] {
   if (readings.length < MIN_READINGS_FOR_TREND) return [];
 
   const sysList = readings.map((r) => r.systolic);
@@ -248,7 +252,7 @@ function detectUnusualReadings(readings: BPReading[]): UnusualReading[] {
 // Reference-range classification
 // ---------------------------------------------------------------------------
 
-function classifyReferenceRange(readings: BPReading[]): ReferenceRangeFlags {
+function classifyReferenceRange(readings: BPHistoryReading[]): ReferenceRangeFlags {
   let aboveReference = 0;
   let belowReference = 0;
   let withinReference = 0;
@@ -289,8 +293,9 @@ function classifyReferenceRange(readings: BPReading[]): ReferenceRangeFlags {
 export function computeBPAnalytics(
   vitals: Vitals[],
   period: TimePeriod,
+  automaticReadings: BPReading[] = [],
 ): BPAnalyticsResult {
-  const readings = extractBPReadings(vitals);
+  const readings = extractBPReadings(vitals, automaticReadings);
 
   const sysList = readings.map((r) => r.systolic);
   const diaList = readings.map((r) => r.diastolic);

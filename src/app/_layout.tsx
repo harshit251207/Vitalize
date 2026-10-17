@@ -1,15 +1,27 @@
 import { DefaultTheme, ThemeProvider } from 'expo-router/react-navigation';
 import * as SplashScreen from 'expo-splash-screen';
 import { Stack, useRouter, useSegments } from 'expo-router';
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
+import { Platform, ToastAndroid } from 'react-native';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { AuthProvider, useAuth } from '@/store/AuthContext';
+import { useAutoBpSync } from '@/hooks/use-auto-bp-sync';
 
 SplashScreen.preventAutoHideAsync();
 
 function RootLayoutNav() {
   const { user, isLoading } = useAuth();
+  const showAutoBpSyncError = useCallback((message: string) => {
+    if (Platform.OS === 'android') {
+      ToastAndroid.show(message, ToastAndroid.LONG);
+    }
+  }, []);
+  useAutoBpSync({
+    uid: user,
+    syncOnAppActive: true,
+    onSyncError: showAutoBpSyncError,
+  });
   const segments = useSegments();
   const router = useRouter();
 

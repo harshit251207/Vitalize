@@ -8,7 +8,10 @@ import * as WebBrowser from 'expo-web-browser';
 import { useAuth, useCategory } from '@/store/AuthContext';
 import { CATEGORY_LABELS } from '@/lib/categoryStorage';
 import { VitalsService } from '@/services/vitalsService';
+import { getAutoBPReadings } from '@/services/autoBpService';
 import { Vitals, UserProfile } from '@/types';
+import type { BPReading } from '@/types/bpReading';
+import { useAutoBpSync } from '@/hooks/use-auto-bp-sync';
 import { useTheme } from '@/hooks/use-theme';
 import { fetchUserProfile } from '@/services/authService';
 import { SOSButton } from '@/components/SOSButton';
@@ -100,6 +103,7 @@ function VitalCard({
 
 export default function HomeScreen() {
   const { user } = useAuth();
+  const autoBpSync = useAutoBpSync({ uid: user, syncOnAppActive: true });
   const { category } = useCategory();
   const { completedCount, totalCount, progressPercent } = useWorkoutProgress();
   const router = useRouter();
@@ -142,13 +146,44 @@ export default function HomeScreen() {
     if (user) {
       try {
         const vitals = await VitalsService.getVitalHistory();
-        if (vitals.length > 0) {
-          const sorted = vitals.sort(
+        let automaticReadings: BPReading[] = [];
+        try {
+          automaticReadings = await getAutoBPReadings(user);
+        } catch (error) {
+          console.warn('Could not load automatic BP readings for home:', error);
+        }
+        const latestManualVitals = [...vitals].sort(
+          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+        )[0] ?? null;
+        const latestManualBp = [...vitals]
+          .filter(
+            (reading) =>
+              typeof reading.bloodPressureSys === 'number' &&
+              typeof reading.bloodPressureDia === 'number',
+          )
+          .sort(
             (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-          );
-          setLatestVitals(sorted[0]);
+          )[0] ?? null;
+        const latestAutomaticBp = [...automaticReadings].sort(
+          (a, b) => b.measuredAt.getTime() - a.measuredAt.getTime()
+        )[0] ?? null;
+        const useAutomaticBp =
+          latestAutomaticBp !== null &&
+          (!latestManualBp ||
+            latestAutomaticBp.measuredAt.getTime() >
+              new Date(latestManualBp.date).getTime());
+
+        if (useAutomaticBp && latestAutomaticBp) {
+          setLatestVitals({
+            ...(latestManualVitals ?? {
+              id: latestAutomaticBp.id,
+              date: latestAutomaticBp.measuredAt.toISOString(),
+            }),
+            bloodPressureSys: latestAutomaticBp.systolic,
+            bloodPressureDia: latestAutomaticBp.diastolic,
+          });
         } else {
-          setLatestVitals(null);
+          setLatestVitals(latestManualVitals);
         }
       } catch {
         setLatestVitals(null);
@@ -160,8 +195,15 @@ export default function HomeScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      void loadData();
-    }, [loadData])
+      let isActive = true;
+      void (async () => {
+        await autoBpSync.syncNow();
+        if (isActive) await loadData();
+      })();
+      return () => {
+        isActive = false;
+      };
+    }, [autoBpSync.syncNow, loadData])
   );
 
   const ranges = profile?.healthyRanges;
