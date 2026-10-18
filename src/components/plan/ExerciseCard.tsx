@@ -8,9 +8,10 @@ interface ExerciseCardProps {
   exercise: Exercise;
   isCompleted: boolean;
   onToggle: () => void;
+  isLocked?: boolean;
 }
 
-export function ExerciseCard({ exercise, isCompleted, onToggle }: ExerciseCardProps) {
+export function ExerciseCard({ exercise, isCompleted, onToggle, isLocked = false }: ExerciseCardProps) {
   const colors = useTheme();
   const isPlaceholder = !exercise.gifUrl || exercise.gifUrl === 'PLACEHOLDER_GIF_URL' || !exercise.gifUrl.startsWith('http');
 
@@ -25,9 +26,10 @@ export function ExerciseCard({ exercise, isCompleted, onToggle }: ExerciseCardPr
         isCompleted && { borderWidth: 2, backgroundColor: colors.success + '0C' }
       ]}
       onPress={onToggle}
+      disabled={isLocked}
       activeOpacity={0.88}
       accessibilityRole="button"
-      accessibilityState={{ checked: isCompleted }}
+      accessibilityState={{ checked: isCompleted, disabled: isLocked }}
       accessibilityLabel={`Toggle completion for ${exercise.name}`}
     >
       <View style={[styles.mediaContainer, { backgroundColor: colors.primary + '0D' }]}>

@@ -7,6 +7,12 @@ import { CATEGORY_LABELS } from '@/lib/categoryStorage';
 import { useTheme } from '@/hooks/use-theme';
 import { useCategory } from '@/store/AuthContext';
 import { useWorkoutProgress } from '@/hooks/use-workout-progress';
+import type { ExerciseId } from '@/exercise/config';
+
+const REP_COUNTER_EXERCISES: Record<string, ExerciseId> = {
+  hemi_bicep_curl: 'bicepCurl',
+  hemi_shoulder_press: 'shoulderPress',
+};
 
 export default function ExerciseScreen() {
   const colors = useTheme();
@@ -87,14 +93,38 @@ export default function ExerciseScreen() {
               </View>
             )}
 
-            {plan.exercises.map((exercise) => (
-              <ExerciseCard
-                key={exercise.id}
-                exercise={exercise}
-                isCompleted={completedIds.includes(exercise.id)}
-                onToggle={() => void toggleExercise(exercise.id)}
-              />
-            ))}
+            {plan.exercises.map((exercise) => {
+              const repExercise =
+                category === 'hemiplegia' ? REP_COUNTER_EXERCISES[exercise.id] : undefined;
+              const isCompleted = completedIds.includes(exercise.id);
+
+              return (
+                <View key={exercise.id}>
+                  <ExerciseCard
+                    exercise={exercise}
+                    isCompleted={isCompleted}
+                    isLocked={Boolean(repExercise)}
+                    onToggle={() => void toggleExercise(exercise.id)}
+                  />
+                  {repExercise && (
+                    <TouchableOpacity
+                      style={[styles.repCounterButton, { backgroundColor: colors.primary }]}
+                      onPress={() => router.push({
+                        pathname: '/rep-counter',
+                        params: { exercise: repExercise, planExerciseId: exercise.id },
+                      })}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Start rep counter for ${exercise.name}`}
+                    >
+                      <Ionicons name="camera-outline" size={18} color="#FFF" />
+                      <Text style={styles.repCounterButtonText}>
+                        {isCompleted ? 'Completed' : 'Rep Counter'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              );
+            })}
             <TouchableOpacity style={styles.changeCategory} onPress={() => router.push('/report-upload?change=1')}>
               <Ionicons name="swap-horizontal" size={17} color={colors.primary} />
               <Text style={[styles.changeText, { color: colors.primary }]}>Change category</Text>
@@ -135,4 +165,6 @@ const styles = StyleSheet.create({
   empty: { flex: 1, padding: 28, justifyContent: 'center', alignItems: 'center' },
   button: { minHeight: 50, borderRadius: 14, paddingHorizontal: 22, justifyContent: 'center', marginTop: 18 },
   buttonText: { color: '#FFF', fontSize: 15, fontWeight: '800' },
+  repCounterButton: { minHeight: 44, borderRadius: 12, marginTop: -7, marginBottom: 16, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  repCounterButtonText: { color: '#FFF', fontSize: 14, fontWeight: '800' },
 });

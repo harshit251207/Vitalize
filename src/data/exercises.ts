@@ -207,6 +207,20 @@ export const EXERCISES_BY_CATEGORY: Record<string, CategoryExerciseGroup> = {
         gifUrl: 'https://www.vissco.com/wp-content/uploads/animation/sub/standing-weight-shift.gif',
         reps: '5 mins guided drill',
       },
+      {
+        id: 'hemi_bicep_curl',
+        name: 'Bicep Curl',
+        description: 'Sit with your back supported and lift a light weight through a comfortable range. Use assistance if needed.',
+        gifUrl: PLACEHOLDER_GIF_URL,
+        reps: '6 reps',
+      },
+      {
+        id: 'hemi_shoulder_press',
+        name: 'Shoulder Press',
+        description: 'Sit with support and press your hands upward only through a comfortable, pain-free range.',
+        gifUrl: PLACEHOLDER_GIF_URL,
+        reps: '6 reps',
+      },
     ],
   },
   Diplegia: {

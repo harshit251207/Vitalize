@@ -41,6 +41,13 @@
           "imageWidth": 76
         }
       ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Vitalize needs camera access to count your reps.",
+          "recordAudioAndroid": false
+        }
+      ],
       "expo-font",
       "expo-web-browser",
       "expo-secure-store",

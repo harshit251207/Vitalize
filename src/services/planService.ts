@@ -75,6 +75,21 @@ export const PlanService = {
     }
   },
 
+  async markExerciseCompleted(username: string, dateStr: string, exerciseId: string): Promise<string[]> {
+    const key = `@completed_${username}_${dateStr}`;
+    const data = await AsyncStorage.getItem(key);
+    const parsed: unknown = data ? JSON.parse(data) : [];
+    if (!Array.isArray(parsed) || !parsed.every((id): id is string => typeof id === 'string')) {
+      throw new Error('Saved workout progress is invalid.');
+    }
+
+    if (parsed.includes(exerciseId)) return parsed;
+
+    const updated = [...parsed, exerciseId];
+    await AsyncStorage.setItem(key, JSON.stringify(updated));
+    return updated;
+  },
+
   async getStreak(username: string): Promise<number> {
     try {
       const data = await AsyncStorage.getItem(`@streak_${username}`);

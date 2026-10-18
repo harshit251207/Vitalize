@@ -48,6 +48,7 @@ function RootLayoutNav() {
         <Stack.Screen name="vitals-entry" options={{ presentation: 'modal' }} />
         <Stack.Screen name="vitals-history" options={{ presentation: 'card' }} />
         <Stack.Screen name="bp-analytics" options={{ presentation: 'card' }} />
+        <Stack.Screen name="rep-counter" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         <Stack.Screen name="report-upload" options={{ presentation: 'modal' }} />
         <Stack.Screen name="emergency-contacts" options={{ presentation: 'modal' }} />
         <Stack.Screen name="chat" options={{ presentation: 'card' }} />
