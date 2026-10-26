@@ -1,12 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -15,17 +18,19 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { QueryDocumentSnapshot, DocumentData } from 'firebase/firestore';
+import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from '@/hooks/use-theme';
 import { Fonts } from '@/constants/theme';
 import Animated, { FadeInDown } from 'react-native-reanimated';
-import { WellnessBanner } from '@/components/WellnessBanner';
 import { useAuth, useCategory } from '@/store/AuthContext';
 import { fetchUserProfile } from '@/services/authService';
 import {
   createComment,
   createCommunityPost,
+  CommunityServiceError,
   deleteComment,
   deleteCommunityPost,
+  getCommunityImageUrl,
   loadMorePosts,
   POST_CATEGORIES,
   reportPost,
@@ -40,14 +45,12 @@ import {
   type ReportReason,
 } from '@/services/communityService';
 
-const NOT_MEDICAL_ADVICE =
-  'Personal experiences, not medical advice. Check with your doctor before changing care.';
-
 type FeedFilter = 'All' | PostCategory | 'My condition';
 const FILTERS: FeedFilter[] = ['All', ...POST_CATEGORIES, 'My condition'];
 const REPORT_REASONS: ReportReason[] = ['Spam', 'Harassment', 'Unsafe medical advice', 'Other'];
 
 function errorMessage(error: unknown, fallback: string): string {
+  if (error instanceof CommunityServiceError) return error.message;
   const code = (error as { code?: string })?.code;
   if (code === 'unavailable' || code === 'network-request-failed') {
     return 'You appear to be offline. Please reconnect and try again.';
@@ -74,6 +77,9 @@ export default function CommunityScreen() {
   const { user } = useAuth();
   const { category: condition } = useCategory();
   const [filter, setFilter] = useState<FeedFilter>('All');
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [postPage, setPostPage] = useState<{ key: string; posts: CommunityPost[] }>({ key: '', posts: [] });
   const [snapshotPage, setSnapshotPage] = useState<{
     key: string;
@@ -86,6 +92,11 @@ export default function CommunityScreen() {
   const [feedOffline, setFeedOffline] = useState(false);
   const [composerOpen, setComposerOpen] = useState(false);
   const [text, setText] = useState('');
+  const [postImage, setPostImage] = useState<{
+    uri: string;
+    width: number;
+    height: number;
+  } | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<PostCategory>('Tips');
   const [anonymous, setAnonymous] = useState(false);
   const [posting, setPosting] = useState(false);
@@ -99,7 +110,7 @@ export default function CommunityScreen() {
     : null;
   const selectedCondition = filter === 'My condition' ? condition : null;
   const conditionUnavailable = filter === 'My condition' && !condition;
-  const feedKey = `${filter}:${condition ?? ''}`;
+  const feedKey = `${filter}:${condition ?? ''}:${sortOrder}`;
   const posts = useMemo(
     () => postPage.key === feedKey ? postPage.posts : [],
     [feedKey, postPage],
@@ -113,22 +124,26 @@ export default function CommunityScreen() {
   const loadingFeed = !conditionUnavailable && loadedFilterKey !== feedKey;
   const canLoadMore = hasMore && snapshotPage.key === feedKey && snapshots.length > 0;
 
-  useEffect(() => {
-    let active = true;
-    if (!user) return;
-    void fetchUserProfile(user).then((profile) => {
-      if (!active) return;
-      const username = profile?.username;
-      if (typeof username === 'string' && username.trim()) {
-        setAuthorName(safeFirstName(username));
-      }
-    }).catch(() => {
-      if (active) setAuthorName('Community member');
-    });
-    return () => {
-      active = false;
-    };
-  }, [user]);
+  useFocusEffect(
+    useCallback(() => {
+      if (!user) return;
+      let active = true;
+      void fetchUserProfile(user).then((profile) => {
+        if (!active) return;
+        const username = profile?.username;
+        setAuthorName(
+          typeof username === 'string' && username.trim()
+            ? safeFirstName(username)
+            : 'Community member',
+        );
+      }).catch((error: unknown) => {
+        console.error('[Community] Could not load account name:', error);
+      });
+      return () => {
+        active = false;
+      };
+    }, [user])
+  );
 
   useEffect(() => {
     if (conditionUnavailable) {
@@ -138,6 +153,7 @@ export default function CommunityScreen() {
     const unsubscribe = subscribeToPosts(
       selectedPostCategory,
       selectedCondition,
+      sortOrder,
       (newPosts, newSnapshots, isFromCache) => {
         setLoadedFilterKey(feedKey);
         setHasMore(newSnapshots.length === 30);
@@ -166,9 +182,47 @@ export default function CommunityScreen() {
       },
     );
     return () => unsubscribe();
-  }, [conditionUnavailable, feedKey, selectedCondition, selectedPostCategory]);
+  }, [conditionUnavailable, feedKey, selectedCondition, selectedPostCategory, sortOrder]);
 
-  const visiblePosts = useMemo(() => posts.filter((post) => !post.hidden), [posts]);
+  const visiblePosts = useMemo(() => {
+    const normalizedQuery = searchQuery.trim().toLocaleLowerCase();
+    return posts
+      .filter((post) => !post.hidden)
+      .filter((post) => !normalizedQuery || [
+        post.text,
+        post.authorName,
+        post.category,
+      ].some((value) => value.toLocaleLowerCase().includes(normalizedQuery)))
+      .sort((a, b) => {
+        const timeA = a.createdAt?.getTime() ?? 0;
+        const timeB = b.createdAt?.getTime() ?? 0;
+        return sortOrder === 'newest' ? timeB - timeA : timeA - timeB;
+      });
+  }, [posts, searchQuery, sortOrder]);
+
+  const pickPostImage = async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission required', 'Allow photo library access to attach an image.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.85,
+      });
+      if (!result.canceled && result.assets[0]) {
+        const { uri, width, height } = result.assets[0];
+        setPostImage({ uri, width, height });
+      }
+    } catch (error) {
+      console.error('[Community] Could not select post image:', error);
+      Alert.alert('Couldn’t select image', 'Please try again.');
+    }
+  };
 
   const handleLoadMore = async () => {
     const cursor = snapshots[snapshots.length - 1];
@@ -176,7 +230,7 @@ export default function CommunityScreen() {
     setLoadingMore(true);
     setFeedError(null);
     try {
-      const page = await loadMorePosts(selectedPostCategory, selectedCondition, cursor);
+      const page = await loadMorePosts(selectedPostCategory, selectedCondition, sortOrder, cursor);
       setHasMore(page.snapshots.length === 30);
       setSnapshotPage((current) => {
         const knownSnapshots = current.key === feedKey ? current.snapshots : [];
@@ -209,20 +263,22 @@ export default function CommunityScreen() {
       Alert.alert('You’re offline', 'Reconnect to publish your post.');
       return;
     }
-    if (!text.trim()) {
-      Alert.alert('Add a message', 'Write something before posting.');
+    if (!text.trim() && !postImage) {
+      Alert.alert('Add to your post', 'Write a message or attach a photo before posting.');
       return;
     }
     setPosting(true);
     try {
       await createCommunityPost({
         text,
+        image: postImage,
         authorName,
         isAnonymous: anonymous,
         category: selectedCategory,
         conditionCategory: condition,
       });
       setText('');
+      setPostImage(null);
       setAnonymous(false);
       setComposerOpen(false);
     } catch (error) {
@@ -274,30 +330,118 @@ export default function CommunityScreen() {
         contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 104 }]}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.header}>
+        <Animated.View entering={FadeInDown.duration(380)} style={styles.header}>
           <View style={styles.headerText}>
             <Text style={[styles.title, { color: colors.text }]}>Community</Text>
-            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Share, learn and support one another</Text>
+            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Real stories. Kind support. Stronger together.</Text>
           </View>
+          <TouchableOpacity
+            style={[styles.headerIconButton, { backgroundColor: colors.backgroundSelected }]}
+            onPress={() => setSearchOpen((open) => !open)}
+            accessibilityRole="button"
+            accessibilityLabel={searchOpen ? 'Close community search' : 'Search community posts'}
+          >
+            <Ionicons name={searchOpen ? 'close' : 'search'} size={21} color={colors.text} />
+          </TouchableOpacity>
           <TouchableOpacity
             style={[styles.createButton, { backgroundColor: actionColor }]}
             onPress={() => setComposerOpen(true)}
             accessibilityRole="button"
             accessibilityLabel="Create a community post"
           >
-            <Ionicons name="add" size={24} color={actionTextColor} />
+            <Ionicons name="add" size={22} color={actionTextColor} />
             <Text style={[styles.createButtonText, { color: actionTextColor }]}>Post</Text>
+          </TouchableOpacity>
+        </Animated.View>
+
+        <Animated.View
+          entering={FadeInDown.delay(45).duration(420)}
+          style={[styles.communityBanner, { backgroundColor: colors.primary }]}
+        >
+          <View style={styles.communityBannerCopy}>
+            <View style={styles.communityBannerBadge}>
+              <Ionicons name="heart" size={12} color="#0A755C" />
+              <Text style={styles.communityBannerBadgeText}>YOU BELONG HERE</Text>
+            </View>
+            <Text style={[styles.communityBannerTitle, { color: '#FFFFFF' }]}>
+              Find your people.
+            </Text>
+            <Text style={[styles.communityBannerSubtitle, { color: '#E8FFF7' }]}>
+              Share a win, ask a question, or just say hello.
+            </Text>
+          </View>
+          <Image
+            source={require('@/assets/images/disability-illustration.png')}
+            style={styles.communityBannerImage}
+            resizeMode="contain"
+            accessible={false}
+          />
+        </Animated.View>
+
+        {searchOpen ? (
+          <View style={[styles.searchBar, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
+            <Ionicons name="search" size={19} color={colors.textSecondary} />
+            <TextInput
+              style={[styles.searchInput, { color: colors.text }]}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder="Search posts, people, topics"
+              placeholderTextColor={colors.textSecondary}
+              returnKeyType="search"
+              accessibilityLabel="Search community posts"
+            />
+            {!!searchQuery && (
+              <TouchableOpacity
+                onPress={() => setSearchQuery('')}
+                accessibilityRole="button"
+                accessibilityLabel="Clear search"
+              >
+                <Ionicons name="close-circle" size={19} color={colors.textSecondary} />
+              </TouchableOpacity>
+            )}
+          </View>
+        ) : null}
+
+        <View style={[styles.startPostPanel, { backgroundColor: '#FFF8EA' }]}>
+          <View style={[styles.startPostPanelHeader, { borderBottomColor: '#E8DFC9' }]}>
+            <Text style={[styles.startPostPanelTitle, { color: colors.text }]}>Start a conversation</Text>
+            <Ionicons name="chatbubbles-outline" size={19} color={colors.primary} />
+          </View>
+          <TouchableOpacity
+            style={[styles.startPostCard, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}
+            onPress={() => setComposerOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Start a community post"
+            activeOpacity={0.82}
+          >
+            <View style={[styles.startPostAvatar, { backgroundColor: colors.primaryLight }]}>
+              <Text style={[styles.startPostInitial, { color: colors.primary }]}>
+                {authorName.charAt(0).toUpperCase()}
+              </Text>
+            </View>
+            <Text style={[styles.startPostPrompt, { color: colors.textSecondary }]}>
+              What would you like to share?
+            </Text>
+            <Ionicons name="images-outline" size={22} color={colors.primary} />
           </TouchableOpacity>
         </View>
 
-        <WellnessBanner
-          variant="community"
-          title="“Two cups of coffee always taste better than one cup of coffee :)”"
-        />
-
-        <View style={[styles.disclaimer, { backgroundColor: colors.warning + '1A', borderColor: colors.warning }]}>
-          <Ionicons name="information-circle" size={18} color={colors.warning} />
-          <Text style={[styles.disclaimerText, { color: colors.text }]}>{NOT_MEDICAL_ADVICE}</Text>
+        <View style={styles.feedHeading}>
+          <View>
+            <Text style={[styles.feedTitle, { color: colors.text }]}>Community feed</Text>
+          </View>
+          <TouchableOpacity
+            style={[styles.sortControl, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}
+            onPress={() => setSortOrder((current) => current === 'newest' ? 'oldest' : 'newest')}
+            accessibilityRole="button"
+            accessibilityLabel={`Sort posts: ${sortOrder}. Tap to change.`}
+          >
+            <Text style={[styles.sortLabel, { color: colors.textSecondary }]}>Sort</Text>
+            <Text style={[styles.sortValue, { color: colors.text }]}>
+              {sortOrder === 'newest' ? 'Newest' : 'Oldest'}
+            </Text>
+            <Ionicons name="chevron-down" size={15} color={colors.textSecondary} />
+          </TouchableOpacity>
         </View>
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
@@ -351,16 +495,22 @@ export default function CommunityScreen() {
             )}
             {visiblePosts.length === 0 && !currentError ? (
               <View style={[styles.stateCard, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
-                <Ionicons name="chatbubbles-outline" size={32} color={colors.primary} />
-                <Text style={[styles.stateTitle, { color: colors.text }]}>Be the first to share something</Text>
-                <Text style={[styles.stateText, { color: colors.textSecondary }]}>Your experience may help someone feel less alone.</Text>
+                <Ionicons name={searchQuery ? 'search-outline' : 'chatbubbles-outline'} size={32} color={colors.primary} />
+                <Text style={[styles.stateTitle, { color: colors.text }]}>
+                  {searchQuery ? 'No matching posts' : 'Be the first to share something'}
+                </Text>
+                <Text style={[styles.stateText, { color: colors.textSecondary }]}>
+                  {searchQuery ? 'Try another search or choose a different topic.' : 'Your experience may help someone feel less alone.'}
+                </Text>
                 <TouchableOpacity
                   style={[styles.stateAction, { backgroundColor: actionColor }]}
-                  onPress={() => setComposerOpen(true)}
+                  onPress={() => searchQuery ? setSearchQuery('') : setComposerOpen(true)}
                   accessibilityRole="button"
-                  accessibilityLabel="Create the first community post"
+                  accessibilityLabel={searchQuery ? 'Clear community search' : 'Create the first community post'}
                 >
-                  <Text style={[styles.stateActionText, { color: actionTextColor }]}>Write a post</Text>
+                  <Text style={[styles.stateActionText, { color: actionTextColor }]}>
+                    {searchQuery ? 'Clear search' : 'Write a post'}
+                  </Text>
                 </TouchableOpacity>
               </View>
             ) : visiblePosts.map((post, index) => (
@@ -396,71 +546,105 @@ export default function CommunityScreen() {
 
       <Modal visible={composerOpen} animationType="slide" onRequestClose={() => setComposerOpen(false)}>
         <SafeAreaView style={[styles.modalScreen, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
-          <KeyboardAvoidingView style={styles.modalScreen} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Create a post</Text>
-              <TouchableOpacity
-                style={styles.closeButton}
-                onPress={() => setComposerOpen(false)}
-                accessibilityRole="button"
-                accessibilityLabel="Close post editor"
-              >
-                <Ionicons name="close" size={26} color={colors.text} />
-              </TouchableOpacity>
-            </View>
-            <View style={[styles.disclaimer, { backgroundColor: colors.warning + '1A', borderColor: colors.warning }]}>
-              <Ionicons name="information-circle" size={18} color={colors.warning} />
-              <Text style={[styles.disclaimerText, { color: colors.text }]}>{NOT_MEDICAL_ADVICE}</Text>
-            </View>
-            <TextInput
-              style={[styles.postInput, { backgroundColor: colors.backgroundElement, borderColor: colors.border, color: colors.text }]}
-              value={text}
-              onChangeText={(value) => setText(value.slice(0, 500))}
-              placeholder="What would you like to share?"
-              placeholderTextColor={colors.textSecondary}
-              multiline
-              maxLength={500}
-              textAlignVertical="top"
-              accessibilityLabel="Post text, maximum 500 characters"
-            />
-            <Text style={[styles.counter, { color: colors.textSecondary }]}>{text.length}/500 characters</Text>
-            <Text style={[styles.fieldLabel, { color: colors.text }]}>Choose a category</Text>
-            <View style={styles.chipsWrap}>
-              {POST_CATEGORIES.map((category) => (
+          <KeyboardAvoidingView style={styles.composerKeyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <ScrollView
+              contentContainerStyle={styles.composerContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={styles.modalHeader}>
+                <View style={styles.modalHeading}>
+                  <Text style={[styles.modalTitle, { color: colors.text }]}>Start a conversation</Text>
+                  <Text style={[styles.modalSubtitle, { color: colors.textSecondary }]}>Your experience can help someone feel less alone.</Text>
+                </View>
                 <TouchableOpacity
-                  key={category}
-                  style={[styles.categoryChip, { backgroundColor: selectedCategory === category ? actionColor : colors.backgroundElement, borderColor: selectedCategory === category ? actionColor : colors.border }]}
-                  onPress={() => setSelectedCategory(category)}
+                  style={styles.closeButton}
+                  onPress={() => setComposerOpen(false)}
                   accessibilityRole="button"
-                  accessibilityLabel={`Post category: ${category}`}
-                  accessibilityState={{ selected: selectedCategory === category }}
+                  accessibilityLabel="Close post editor"
                 >
-                  <Text style={[styles.filterText, { color: selectedCategory === category ? actionTextColor : colors.text }]}>{category}</Text>
+                  <Ionicons name="close" size={26} color={colors.text} />
                 </TouchableOpacity>
-              ))}
-            </View>
-            <TouchableOpacity
-              style={[styles.anonymousRow, { borderColor: colors.border }]}
-              onPress={() => setAnonymous((value) => !value)}
-              accessibilityRole="switch"
-              accessibilityLabel="Post anonymously"
-              accessibilityState={{ checked: anonymous }}
-            >
-              <Ionicons name={anonymous ? 'eye-off-outline' : 'person-outline'} size={24} color={colors.primary} />
-              <Text style={[styles.anonymousLabel, { color: colors.text }]}>Post anonymously</Text>
-              <View style={[styles.switchTrack, { backgroundColor: anonymous ? colors.primary : colors.backgroundSelected }]}>
-                <View style={[styles.switchThumb, { alignSelf: anonymous ? 'flex-end' : 'flex-start' }]} />
               </View>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.submitButton, { backgroundColor: actionColor, opacity: posting ? 0.7 : 1 }]}
-              onPress={() => void submitPost()}
-              disabled={posting}
-              accessibilityRole="button"
-              accessibilityLabel="Publish community post"
-            >
-              {posting ? <ActivityIndicator color={actionTextColor} /> : <Text style={[styles.submitText, { color: actionTextColor }]}>Post</Text>}
-            </TouchableOpacity>
+              <TextInput
+                style={[styles.postInput, { backgroundColor: colors.backgroundElement, borderColor: colors.border, color: colors.text }]}
+                value={text}
+                onChangeText={(value) => setText(value.slice(0, 500))}
+                placeholder="What’s on your mind?"
+                placeholderTextColor={colors.textSecondary}
+                multiline
+                maxLength={500}
+                textAlignVertical="top"
+                accessibilityLabel="Post text, maximum 500 characters"
+              />
+              <Text style={[styles.counter, { color: colors.textSecondary }]}>{text.length}/500 characters</Text>
+              {postImage ? (
+                <View style={styles.imagePreviewWrap}>
+                  <Image source={{ uri: postImage.uri }} style={styles.imagePreview} resizeMode="cover" />
+                  <TouchableOpacity
+                    style={styles.removeImageButton}
+                    onPress={() => setPostImage(null)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Remove attached photo"
+                  >
+                    <Ionicons name="close" size={19} color="#FFFFFF" />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.attachPhotoButton, { borderColor: colors.border, backgroundColor: colors.backgroundSelected }]}
+                  onPress={() => void pickPostImage()}
+                  accessibilityRole="button"
+                  accessibilityLabel="Attach a photo"
+                >
+                  <View style={[styles.attachIcon, { backgroundColor: colors.primaryLight }]}>
+                    <Ionicons name="image-outline" size={21} color={colors.primary} />
+                  </View>
+                  <View style={styles.attachCopy}>
+                    <Text style={[styles.attachTitle, { color: colors.text }]}>Add a photo</Text>
+                    <Text style={[styles.attachSubtitle, { color: colors.textSecondary }]}>Share a moment with your community</Text>
+                  </View>
+                  <Ionicons name="add-circle-outline" size={23} color={colors.primary} />
+                </TouchableOpacity>
+              )}
+              <Text style={[styles.fieldLabel, { color: colors.text }]}>Choose a category</Text>
+              <View style={styles.chipsWrap}>
+                {POST_CATEGORIES.map((category) => (
+                  <TouchableOpacity
+                    key={category}
+                    style={[styles.categoryChip, { backgroundColor: selectedCategory === category ? actionColor : colors.backgroundElement, borderColor: selectedCategory === category ? actionColor : colors.border }]}
+                    onPress={() => setSelectedCategory(category)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Post category: ${category}`}
+                    accessibilityState={{ selected: selectedCategory === category }}
+                  >
+                    <Text style={[styles.filterText, { color: selectedCategory === category ? actionTextColor : colors.text }]}>{category}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <TouchableOpacity
+                style={[styles.anonymousRow, { borderColor: colors.border }]}
+                onPress={() => setAnonymous((value) => !value)}
+                accessibilityRole="switch"
+                accessibilityLabel="Post anonymously"
+                accessibilityState={{ checked: anonymous }}
+              >
+                <Ionicons name={anonymous ? 'eye-off-outline' : 'person-outline'} size={24} color={colors.primary} />
+                <Text style={[styles.anonymousLabel, { color: colors.text }]}>Post anonymously</Text>
+                <View style={[styles.switchTrack, { backgroundColor: anonymous ? colors.primary : colors.backgroundSelected }]}>
+                  <View style={[styles.switchThumb, { alignSelf: anonymous ? 'flex-end' : 'flex-start' }]} />
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.submitButton, { backgroundColor: actionColor, opacity: posting ? 0.7 : 1 }]}
+                onPress={() => void submitPost()}
+                disabled={posting}
+                accessibilityRole="button"
+                accessibilityLabel="Publish community post"
+              >
+                {posting ? <ActivityIndicator color={actionTextColor} /> : <Text style={[styles.submitText, { color: actionTextColor }]}>Share with community</Text>}
+              </TouchableOpacity>
+            </ScrollView>
           </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
@@ -526,11 +710,29 @@ function PostCard({
 }) {
   const colors = useTheme();
   const [liked, setLiked] = useState(false);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [comments, setComments] = useState<CommunityComment[]>([]);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [commenting, setCommenting] = useState(false);
   const [actionError, setActionError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    if (!post.imagePath) {
+      setImageUrl(null);
+      return;
+    }
+    void getCommunityImageUrl(post.imagePath).then((url) => {
+      if (active) setImageUrl(url);
+    }).catch((error: unknown) => {
+      console.warn('[Community] Could not load post image:', error);
+      if (active) setActionError('Couldn’t load this post photo.');
+    });
+    return () => {
+      active = false;
+    };
+  }, [post.imagePath]);
 
   useEffect(() => {
     let active = true;
@@ -587,15 +789,33 @@ function PostCard({
     }
   };
 
+  const sharePost = async () => {
+    try {
+      await Share.share({
+        message: [post.text, imageUrl].filter(Boolean).join('\n\n') || 'Check out this community post.',
+      });
+    } catch (error) {
+      console.error('[Community] Could not share post:', error);
+      setActionError('Couldn’t share this post right now.');
+    }
+  };
+
   return (
-    <View style={[styles.postCard, { backgroundColor: colors.backgroundSelected, borderColor: colors.border }]}>
+    <View style={[styles.postCard, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
       <View style={styles.postHeader}>
         <View style={[styles.avatar, { backgroundColor: colors.primaryLight }]}>
           <Ionicons name={post.isAnonymous ? 'eye-off-outline' : 'person-outline'} size={22} color={colors.primary} />
         </View>
         <View style={styles.postAuthor}>
-          <Text style={[styles.authorName, { color: colors.text }]}>{post.isAnonymous ? 'Anonymous' : post.authorName}</Text>
-          <Text style={[styles.postMeta, { color: colors.textSecondary }]}>{post.category} · {timeLabel(post.createdAt)}</Text>
+          <Text style={[styles.authorName, { color: colors.text }]}>
+            {post.isAnonymous ? 'Anonymous' : post.authorId === currentUserId ? authorName : post.authorName}
+          </Text>
+          <View style={styles.postMetadata}>
+            <View style={[styles.postCategoryBadge, { backgroundColor: colors.primaryLight }]}>
+              <Text style={[styles.postCategoryText, { color: colors.primary }]}>{post.category}</Text>
+            </View>
+            <Text style={[styles.postMeta, { color: colors.textSecondary }]}>{timeLabel(post.createdAt)}</Text>
+          </View>
         </View>
         {post.authorId === currentUserId ? (
           <TouchableOpacity
@@ -619,7 +839,15 @@ function PostCard({
           </TouchableOpacity>
         )}
       </View>
-      <Text style={[styles.postBody, { color: colors.text }]}>{post.text}</Text>
+      {post.text ? <Text style={[styles.postBody, { color: colors.text }]}>{post.text}</Text> : null}
+      {imageUrl ? (
+        <Image
+          source={{ uri: imageUrl }}
+          style={styles.postImage}
+          resizeMode="cover"
+          accessibilityLabel="Photo attached to community post"
+        />
+      ) : null}
       {!!actionError && <Text style={[styles.inlineError, { color: colors.danger }]}>{actionError}</Text>}
       <View style={[styles.postActions, { borderTopColor: colors.border }]}>
         <TouchableOpacity
@@ -643,6 +871,15 @@ function PostCard({
           <Ionicons name="chatbubble-ellipses-outline" size={21} color={colors.textSecondary} />
           <Text style={[styles.actionText, { color: colors.textSecondary }]}>{post.commentCount}</Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.postAction}
+          onPress={() => void sharePost()}
+          accessibilityRole="button"
+          accessibilityLabel="Share this post"
+        >
+          <Ionicons name="share-social-outline" size={19} color={colors.textSecondary} />
+          <Text style={[styles.actionText, { color: colors.textSecondary }]}>Share</Text>
+        </TouchableOpacity>
       </View>
       {commentsOpen && (
         <View style={[styles.commentsSection, { borderTopColor: colors.border }]}>
@@ -650,7 +887,9 @@ function PostCard({
           {comments.map((comment) => (
             <View key={comment.id} style={styles.commentRow}>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.commentAuthor, { color: colors.text }]}>{comment.isAnonymous ? 'Anonymous' : comment.authorName}</Text>
+                <Text style={[styles.commentAuthor, { color: colors.text }]}>
+                  {comment.isAnonymous ? 'Anonymous' : comment.authorId === currentUserId ? authorName : comment.authorName}
+                </Text>
                 <Text style={[styles.commentBody, { color: colors.textSecondary }]}>{comment.text}</Text>
               </View>
               {comment.authorId === currentUserId && (
@@ -699,38 +938,64 @@ function PostCard({
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
-  content: { paddingHorizontal: 18, paddingTop: 12, gap: 14 },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  content: { paddingHorizontal: 18, paddingTop: 12, gap: 11 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingBottom: 0 },
   headerText: { flex: 1 },
-  title: { fontFamily: Fonts.sans, fontSize: 29, lineHeight: 37, fontWeight: '700' },
-  subtitle: { fontFamily: Fonts.sans, fontSize: 15, lineHeight: 22, marginTop: 2 },
-  createButton: { minHeight: 56, paddingHorizontal: 17, borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 5 },
-  createButtonText: { color: '#FFFFFF', fontSize: 17, fontWeight: '700' },
-  disclaimer: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 7, flexDirection: 'row', alignItems: 'center', gap: 7 },
-  disclaimerText: { flex: 1, fontSize: 11, lineHeight: 15, fontWeight: '500' },
-  filters: { gap: 9, paddingVertical: 2 },
-  filterChip: { minHeight: 56, borderWidth: 1, borderRadius: 15, paddingHorizontal: 15, justifyContent: 'center' },
-  filterText: { fontSize: 15, lineHeight: 20, fontWeight: '600' },
+  title: { fontFamily: Fonts.sans, fontSize: 26, lineHeight: 33, fontWeight: '800', letterSpacing: -0.3 },
+  subtitle: { fontFamily: Fonts.sans, fontSize: 13, lineHeight: 18, marginTop: 1 },
+  createButton: { minHeight: 48, paddingHorizontal: 16, borderRadius: 16, flexDirection: 'row', alignItems: 'center', gap: 4, elevation: 3, shadowColor: '#087F5B', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.2, shadowRadius: 5 },
+  createButtonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800', fontFamily: Fonts.sans },
+  headerIconButton: { width: 44, height: 44, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  communityBanner: { minHeight: 124, borderRadius: 23, paddingLeft: 16, paddingVertical: 9, paddingRight: 4, flexDirection: 'row', alignItems: 'center', overflow: 'hidden' },
+  communityBannerCopy: { flex: 1, gap: 5, zIndex: 1 },
+  communityBannerBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#D9F8EC', alignSelf: 'flex-start', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 4 },
+  communityBannerBadgeText: { color: '#0A755C', fontFamily: Fonts.sans, fontSize: 8, letterSpacing: 0.8, fontWeight: '900' },
+  communityBannerTitle: { fontFamily: Fonts.sans, fontSize: 19, lineHeight: 24, fontWeight: '800' },
+  communityBannerSubtitle: { fontFamily: Fonts.sans, fontSize: 12, lineHeight: 16, maxWidth: 200 },
+  communityBannerImage: { width: 106, height: 122, marginLeft: -8 },
+  searchBar: { minHeight: 48, borderWidth: 1, borderRadius: 15, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 9 },
+  searchInput: { flex: 1, fontFamily: Fonts.sans, fontSize: 14, paddingVertical: 10 },
+  startPostPanel: { borderRadius: 19, padding: 6, gap: 5 },
+  startPostPanelHeader: { minHeight: 25, paddingHorizontal: 5, paddingBottom: 3, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  startPostPanelTitle: { fontFamily: Fonts.sans, fontSize: 14, lineHeight: 19, fontWeight: '800' },
+  startPostCard: { minHeight: 46, borderWidth: 1, borderRadius: 15, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  startPostAvatar: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  startPostInitial: { fontFamily: Fonts.sans, fontSize: 14, fontWeight: '800' },
+  startPostPrompt: { flex: 1, fontFamily: Fonts.sans, fontSize: 13 },
+  feedHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 1 },
+  feedTitle: { fontFamily: Fonts.sans, fontSize: 21, lineHeight: 28, fontWeight: '800' },
+  feedSubtitle: { fontFamily: Fonts.sans, fontSize: 12, lineHeight: 17, marginTop: 2 },
+  feedIconBadge: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
+  sortControl: { minHeight: 38, borderWidth: 1, borderRadius: 13, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  sortLabel: { fontFamily: Fonts.sans, fontSize: 12 },
+  sortValue: { fontFamily: Fonts.sans, fontSize: 12, fontWeight: '700' },
+  filters: { gap: 8, paddingVertical: 2, paddingRight: 18 },
+  filterChip: { minHeight: 40, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, justifyContent: 'center' },
+  filterText: { fontSize: 13, lineHeight: 18, fontWeight: '700', fontFamily: Fonts.sans },
   loader: { marginTop: 40 },
-  stateCard: { padding: 22, borderRadius: 20, borderWidth: 1, alignItems: 'center', gap: 10 },
-  stateTitle: { fontSize: 19, lineHeight: 26, fontWeight: '700', textAlign: 'center' },
-  stateText: { fontSize: 15, lineHeight: 22, textAlign: 'center' },
-  stateAction: { minHeight: 56, paddingHorizontal: 22, borderRadius: 14, justifyContent: 'center', marginTop: 4 },
-  stateActionText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+  stateCard: { padding: 24, borderRadius: 22, borderWidth: 1, alignItems: 'center', gap: 10 },
+  stateTitle: { fontSize: 19, lineHeight: 26, fontWeight: '800', textAlign: 'center', fontFamily: Fonts.sans },
+  stateText: { fontSize: 14, lineHeight: 21, textAlign: 'center', fontFamily: Fonts.sans },
+  stateAction: { minHeight: 48, paddingHorizontal: 22, borderRadius: 15, justifyContent: 'center', marginTop: 4 },
+  stateActionText: { color: '#FFFFFF', fontSize: 14, fontWeight: '800', fontFamily: Fonts.sans },
   errorNotice: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14, borderRadius: 14 },
   errorText: { flex: 1, fontSize: 15, lineHeight: 21 },
-  postCard: { borderWidth: 0, borderRadius: 22, padding: 16, gap: 12 },
+  postCard: { borderWidth: 1, borderRadius: 22, padding: 15, gap: 12, shadowColor: '#122B22', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.055, shadowRadius: 10, elevation: 1 },
   postHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  avatar: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  avatar: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
   postAuthor: { flex: 1 },
-  authorName: { fontFamily: Fonts.sans, fontSize: 16, lineHeight: 22, fontWeight: '700' },
-  postMeta: { fontFamily: Fonts.sans, fontSize: 13, lineHeight: 19, marginTop: 2 },
+  authorName: { fontFamily: Fonts.sans, fontSize: 14, lineHeight: 19, fontWeight: '800' },
+  postMetadata: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 3 },
+  postCategoryBadge: { borderRadius: 9, paddingHorizontal: 7, paddingVertical: 2 },
+  postCategoryText: { fontFamily: Fonts.sans, fontSize: 10, lineHeight: 14, fontWeight: '800' },
+  postMeta: { fontFamily: Fonts.sans, fontSize: 11, lineHeight: 16 },
   iconButton: { minWidth: 56, minHeight: 56, alignItems: 'center', justifyContent: 'center' },
-  postBody: { fontFamily: Fonts.sans, fontSize: 17, lineHeight: 28, letterSpacing: 0.1, fontWeight: '400' },
-  inlineError: { fontSize: 14, lineHeight: 20 },
-  postActions: { flexDirection: 'row', borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 6 },
-  postAction: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 10, marginRight: 16 },
-  actionText: { fontSize: 15, fontWeight: '600' },
+  postBody: { fontFamily: Fonts.sans, fontSize: 15, lineHeight: 23, letterSpacing: 0.05, fontWeight: '400' },
+  postImage: { width: '100%', height: 230, borderRadius: 16, backgroundColor: '#EDF6EF' },
+  inlineError: { fontSize: 13, lineHeight: 19 },
+  postActions: { flexDirection: 'row', borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 5, marginTop: 1 },
+  postAction: { minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 10, marginRight: 12 },
+  actionText: { fontSize: 13, fontWeight: '700', fontFamily: Fonts.sans },
   commentsSection: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 12, gap: 10 },
   commentRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   commentAuthor: { fontSize: 14, fontWeight: '700', lineHeight: 20 },
@@ -742,20 +1007,32 @@ const styles = StyleSheet.create({
   counter: { textAlign: 'right', fontSize: 13, lineHeight: 18 },
   loadMore: { minHeight: 56, borderWidth: 1, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   loadMoreText: { fontSize: 16, fontWeight: '700' },
-  modalScreen: { flex: 1, padding: 18, gap: 14 },
-  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  modalTitle: { fontSize: 24, lineHeight: 32, fontWeight: '800', flex: 1 },
+  modalScreen: { flex: 1, paddingHorizontal: 18, paddingTop: 12 },
+  composerKeyboard: { flex: 1 },
+  composerContent: { gap: 14, paddingBottom: 22 },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  modalHeading: { flex: 1, gap: 3 },
+  modalTitle: { fontSize: 23, lineHeight: 30, fontWeight: '800', flex: 1, fontFamily: Fonts.sans },
+  modalSubtitle: { fontSize: 13, lineHeight: 19, fontFamily: Fonts.sans },
   closeButton: { width: 56, height: 56, alignItems: 'center', justifyContent: 'center' },
-  postInput: { minHeight: 170, borderWidth: 1, borderRadius: 16, padding: 14, fontSize: 18, lineHeight: 26 },
-  fieldLabel: { fontSize: 16, lineHeight: 22, fontWeight: '700' },
+  postInput: { minHeight: 145, borderWidth: 1, borderRadius: 18, padding: 15, fontSize: 16, lineHeight: 24 },
+  fieldLabel: { fontSize: 15, lineHeight: 21, fontWeight: '800', fontFamily: Fonts.sans },
   chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  categoryChip: { minHeight: 56, borderWidth: 1, borderRadius: 15, paddingHorizontal: 14, justifyContent: 'center' },
-  anonymousRow: { minHeight: 60, borderWidth: 1, borderRadius: 16, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  anonymousLabel: { flex: 1, fontSize: 16, fontWeight: '600' },
-  switchTrack: { width: 52, height: 30, borderRadius: 16, padding: 4, justifyContent: 'center' },
-  switchThumb: { width: 22, height: 22, borderRadius: 11, backgroundColor: '#FFFFFF' },
-  submitButton: { minHeight: 60, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  submitText: { color: '#FFFFFF', fontSize: 18, lineHeight: 24, fontWeight: '800' },
+  categoryChip: { minHeight: 40, borderWidth: 1, borderRadius: 13, paddingHorizontal: 13, justifyContent: 'center' },
+  attachPhotoButton: { minHeight: 72, borderWidth: 1, borderRadius: 17, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 11 },
+  attachIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  attachCopy: { flex: 1, gap: 2 },
+  attachTitle: { fontSize: 14, lineHeight: 19, fontWeight: '800', fontFamily: Fonts.sans },
+  attachSubtitle: { fontSize: 12, lineHeight: 17, fontFamily: Fonts.sans },
+  imagePreviewWrap: { position: 'relative' },
+  imagePreview: { height: 220, width: '100%', borderRadius: 17, backgroundColor: '#EDF6EF' },
+  removeImageButton: { position: 'absolute', top: 9, right: 9, width: 34, height: 34, borderRadius: 17, backgroundColor: '#15231FBB', alignItems: 'center', justifyContent: 'center' },
+  anonymousRow: { minHeight: 56, borderWidth: 1, borderRadius: 16, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 11 },
+  anonymousLabel: { flex: 1, fontSize: 14, fontWeight: '700', fontFamily: Fonts.sans },
+  switchTrack: { width: 48, height: 28, borderRadius: 16, padding: 4, justifyContent: 'center' },
+  switchThumb: { width: 20, height: 20, borderRadius: 10, backgroundColor: '#FFFFFF' },
+  submitButton: { minHeight: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  submitText: { color: '#FFFFFF', fontSize: 15, lineHeight: 21, fontWeight: '800', fontFamily: Fonts.sans },
   modalBackdrop: { flex: 1, backgroundColor: '#00000080', justifyContent: 'center', padding: 20 },
   reportPanel: { borderRadius: 22, padding: 20, gap: 10 },
   reportReason: { minHeight: 56, borderWidth: 1, borderRadius: 14, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 10 },

@@ -71,6 +71,7 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly([
           'text', 'authorId', 'authorName', 'isAnonymous', 'category',
           'conditionCategory', 'createdAt', 'likeCount', 'commentCount',
+          'imagePath',
           'reportCount', 'hidden'
         ])
         && request.resource.data.keys().hasAll([
@@ -80,12 +81,11 @@ service cloud.firestore {
         ])
         && request.resource.data.authorId == request.auth.uid
         && request.resource.data.text is string
-        && request.resource.data.text.size() >= 1
         && request.resource.data.text.size() <= 500
         && request.resource.data.authorName is string
         && request.resource.data.authorName.size() >= 1
         && request.resource.data.authorName.size() <= 40
-        && request.resource.data.authorName.matches('^[A-Za-z][A-Za-z -]{0,39}$')
+        && request.resource.data.authorName.matches("^[A-Za-z][A-Za-z '-]{0,39}$")
         && request.resource.data.isAnonymous is bool
         && (!request.resource.data.isAnonymous || request.resource.data.authorName == 'Anonymous')
         && request.resource.data.category in ['Tips', 'Questions', 'Motivation', 'Exercise']
@@ -96,7 +96,16 @@ service cloud.firestore {
         && request.resource.data.likeCount == 0
         && request.resource.data.commentCount == 0
         && request.resource.data.reportCount == 0
-        && request.resource.data.hidden == false;
+        && request.resource.data.hidden == false
+        && (
+          !('imagePath' in request.resource.data)
+          || (
+            request.resource.data.imagePath is string
+            && request.resource.data.imagePath
+              == 'communityPosts/' + request.auth.uid + '/' + postId + '.jpg'
+          )
+        )
+        && (request.resource.data.text.size() >= 1 || 'imagePath' in request.resource.data);
       allow update: if request.auth != null
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'likeCount', 'commentCount', 'reportCount', 'hidden'
@@ -127,7 +136,7 @@ service cloud.firestore {
           && request.resource.data.authorName is string
           && request.resource.data.authorName.size() >= 1
           && request.resource.data.authorName.size() <= 40
-          && request.resource.data.authorName.matches('^[A-Za-z][A-Za-z -]{0,39}$')
+          && request.resource.data.authorName.matches("^[A-Za-z][A-Za-z '-]{0,39}$")
           && request.resource.data.isAnonymous is bool
           && (!request.resource.data.isAnonymous || request.resource.data.authorName == 'Anonymous')
           && request.resource.data.createdAt is timestamp;

@@ -48,10 +48,10 @@ export function WorkoutProgressHero({
           />
         </Svg>
         <Image
-          source={require('@/assets/images/disability-illustration.png')}
+          source={require('@/assets/images/movement-wheelchair.png')}
           style={styles.image}
           resizeMode="contain"
-          accessibilityLabel="People with different disabilities"
+          accessibilityLabel="A person exercising in a wheelchair"
         />
         <View style={[styles.percentBadge, { backgroundColor: colors.backgroundElement }]}>
           <Text style={[styles.percent, { color: colors.primary }]}>{boundedPercent}%</Text>
@@ -81,7 +81,7 @@ const styles = StyleSheet.create({
     lineHeight: 23,
   },
   visual: {
-    height: 138,
+    height: 172,
     width: 220,
     alignItems: 'center',
     justifyContent: 'flex-end',
@@ -94,12 +94,13 @@ const styles = StyleSheet.create({
   image: {
     position: 'absolute',
     bottom: 0,
-    width: 180,
-    height: 118,
+    width: 170,
+    height: 166,
   },
   percentBadge: {
     position: 'absolute',
-    top: 35,
+    top: 36,
+    right: 12,
     paddingHorizontal: 10,
     paddingVertical: 3,
     borderRadius: 12,

@@ -1,7 +1,9 @@
 import { computeBPAnalytics, summarizeBPAnalytics } from '@/services/bpAnalyticsService';
 import { getVitalHistoryForPeriod, VitalsService } from '@/services/vitalsService';
+import { getAutoBPReadings } from '@/services/autoBpService';
 import { PlanService } from '@/services/planService';
 import { Vitals } from '@/types';
+import type { BPReading } from '@/types/bpReading';
 import { generateChatCompletion, type AIProviderName } from './aiProvider';
 
 export type AgentIntent =
@@ -319,6 +321,19 @@ function formatVitalsLog(vitals: Vitals[], fields?: Array<'bp' | 'hr' | 'sugar' 
     .join('\n') || 'Logged entries exist, but the requested fields were not recorded.';
 }
 
+function formatBPReadings(readings: BPReading[]): string {
+  if (readings.length === 0) {
+    return 'No Health Connect BP readings in this period.';
+  }
+
+  return readings
+    .map(
+      (reading) =>
+        `${reading.measuredAt.toLocaleString()}: BP ${reading.systolic}/${reading.diastolic} mmHg (Health Connect)`,
+    )
+    .join('\n');
+}
+
 function detectRedFlags(vitals: Vitals[]): string[] {
   const flags: string[] = [];
   const newestFirst = [...vitals].reverse();
@@ -480,6 +495,36 @@ async function retrieveContextForIntent(
     try {
       const days = intent === 'BP_ANALYTICS_30D' ? 30 : 7;
       const vitals = await getVitalHistoryForPeriod(days);
+      const needsBPReadings = [
+        'ANALYZE_BP',
+        'BP_ANALYTICS_7D',
+        'BP_ANALYTICS_30D',
+        'EXPLAIN_VITAL_READING',
+        'GET_LATEST_BP',
+        'VIEW_RECENT_VITALS',
+      ].includes(intent);
+      let automaticBPReadings: BPReading[] = [];
+      let automaticBPUnavailable = false;
+
+      if (needsBPReadings) {
+        try {
+          const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+          automaticBPReadings = await getAutoBPReadings(userUid, since);
+        } catch (error) {
+          automaticBPUnavailable = true;
+          console.warn('[VitalizeAgent] Error fetching Health Connect BP readings:', error);
+        }
+      }
+
+      const combinedVitals: Vitals[] = [
+        ...vitals,
+        ...automaticBPReadings.map((reading) => ({
+          id: reading.id,
+          date: reading.measuredAt.toISOString(),
+          bloodPressureSys: reading.systolic,
+          bloodPressureDia: reading.diastolic,
+        })),
+      ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
       const hasNumeric = vitals.some(
         (v) =>
           typeof v.bloodPressureSys === 'number' ||
@@ -487,27 +532,33 @@ async function retrieveContextForIntent(
           typeof v.bloodSugar === 'number' ||
           typeof v.weight === 'number'
       );
-      hasData = hasNumeric;
-      redFlags = detectRedFlags(vitals);
+      hasData = hasNumeric || automaticBPReadings.length > 0;
+      redFlags = detectRedFlags(combinedVitals);
+
+      if (automaticBPUnavailable) {
+        sections.push('Health Connect BP history could not be loaded. Manual Vitalize readings are still available.');
+      }
 
       if (intent === 'ANALYZE_HEART_RATE') {
         sections.push(`Heart-rate history (${days} days):\n${formatVitalsLog(vitals, ['hr'])}`);
       } else if (intent === 'ANALYZE_BLOOD_SUGAR') {
         sections.push(`Blood-sugar history (${days} days):\n${formatVitalsLog(vitals, ['sugar'])}`);
       } else if (intent === 'GET_LATEST_BP' || intent === 'ANALYZE_BP' || intent === 'EXPLAIN_VITAL_READING') {
-        sections.push(`Latest vitals:\n${formatLatestVitals(vitals)}`);
-        const analytics = computeBPAnalytics(vitals, '7d');
+        sections.push(`Latest vitals:\n${formatLatestVitals(combinedVitals)}`);
+        const analytics = computeBPAnalytics(vitals, '7d', automaticBPReadings);
         sections.push(`Recent BP overview:\n${summarizeBPAnalytics(analytics)}`);
+        sections.push(`Recent BP readings:\n${formatVitalsLog(combinedVitals, ['bp'])}`);
         hasData = analytics.readingCount > 0 || hasNumeric;
       } else if (intent === 'BP_ANALYTICS_7D' || intent === 'BP_ANALYTICS_30D') {
         const period = intent === 'BP_ANALYTICS_30D' ? '30d' : '7d';
-        const analytics = computeBPAnalytics(vitals, period);
+        const analytics = computeBPAnalytics(vitals, period, automaticBPReadings);
         sections.push(`BP analytics (${period}):\n${summarizeBPAnalytics(analytics)}`);
-        sections.push(`Raw BP log:\n${formatVitalsLog(vitals, ['bp'])}`);
+        sections.push(`Manual BP log:\n${formatVitalsLog(vitals, ['bp'])}`);
+        sections.push(`Health Connect BP log:\n${formatBPReadings(automaticBPReadings)}`);
         hasData = analytics.readingCount > 0;
       } else {
-        sections.push(`Latest vitals:\n${formatLatestVitals(vitals)}`);
-        sections.push(`Recent vitals log:\n${formatVitalsLog(vitals)}`);
+        sections.push(`Latest vitals:\n${formatLatestVitals(combinedVitals)}`);
+        sections.push(`Recent vitals log:\n${formatVitalsLog(combinedVitals)}`);
       }
 
       if (redFlags.length) {

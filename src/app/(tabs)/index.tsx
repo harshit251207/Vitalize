@@ -292,6 +292,14 @@ export default function HomeScreen() {
           )}
         </Animated.View>
 
+        <Animated.View entering={FadeInDown.delay(35).duration(450)}>
+          <WorkoutProgressHero
+            percent={category ? progressPercent : 0}
+            completed={category ? completedCount : 0}
+            total={totalCount}
+          />
+        </Animated.View>
+
         <Animated.View entering={FadeInDown.delay(70).duration(420)} style={styles.sectionHeaderRow}>
           <View>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>Health overview</Text>
@@ -352,14 +360,6 @@ export default function HomeScreen() {
             onPressLog={() => router.push('/vitals-entry')}
           />
         </View>
-
-        <Animated.View entering={FadeInDown.delay(320).duration(450)}>
-          <WorkoutProgressHero
-            percent={category ? progressPercent : 0}
-            completed={category ? completedCount : 0}
-            total={totalCount}
-          />
-        </Animated.View>
 
         <Animated.View
           entering={FadeInDown.delay(360).duration(420)}

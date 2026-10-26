@@ -2,6 +2,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   limit,
   onSnapshot,
@@ -16,7 +17,14 @@ import {
   type QueryConstraint,
   type QueryDocumentSnapshot,
 } from 'firebase/firestore';
-import { auth, db } from '@/services/firebase';
+import {
+  deleteObject,
+  getDownloadURL,
+  ref,
+  uploadBytes,
+} from 'firebase/storage';
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
+import { auth, db, storage } from '@/services/firebase';
 import type { DisabilityCategory } from '@/lib/categoryStorage';
 
 export const POST_CATEGORIES = ['Tips', 'Questions', 'Motivation', 'Exercise'] as const;
@@ -26,6 +34,7 @@ export type ReportReason = 'Spam' | 'Harassment' | 'Unsafe medical advice' | 'Ot
 export interface CommunityPost {
   id: string;
   text: string;
+  imagePath: string | null;
   authorId: string;
   authorName: string;
   isAnonymous: boolean;
@@ -40,7 +49,7 @@ export interface CommunityPost {
 
 export function safeFirstName(value: string): string {
   const firstName = value.trim().split(/\s+/)[0] ?? '';
-  return /^[A-Za-z][A-Za-z-]{0,39}$/.test(firstName) ? firstName : 'Community member';
+  return /^[A-Za-z][A-Za-z'-]{0,39}$/.test(firstName) ? firstName : 'Community member';
 }
 
 export interface CommunityComment {
@@ -85,6 +94,7 @@ function mapPost(id: string, data: DocumentData): CommunityPost {
   return {
     id,
     text: typeof data.text === 'string' ? data.text : '',
+    imagePath: typeof data.imagePath === 'string' ? data.imagePath : null,
     authorId: typeof data.authorId === 'string' ? data.authorId : '',
     authorName: typeof data.authorName === 'string' ? data.authorName : 'Community member',
     isAnonymous: data.isAnonymous === true,
@@ -112,17 +122,19 @@ function mapComment(id: string, data: DocumentData): CommunityComment {
 function postQueryConstraints(
   category: PostCategory | null,
   condition: DisabilityCategory | null,
+  sortOrder: 'newest' | 'oldest',
 ): QueryConstraint[] {
   const constraints: QueryConstraint[] = [where('hidden', '==', false)];
   if (category) constraints.push(where('category', '==', category));
   if (condition) constraints.push(where('conditionCategory', '==', condition));
-  constraints.push(orderBy('createdAt', 'desc'), limit(30));
+  constraints.push(orderBy('createdAt', sortOrder === 'newest' ? 'desc' : 'asc'), limit(30));
   return constraints;
 }
 
 export function subscribeToPosts(
   category: PostCategory | null,
   condition: DisabilityCategory | null,
+  sortOrder: 'newest' | 'oldest',
   onPosts: (
     posts: CommunityPost[],
     snapshots: QueryDocumentSnapshot<DocumentData>[],
@@ -131,7 +143,7 @@ export function subscribeToPosts(
   onError: (error: Error) => void,
 ): () => void {
   requireUid();
-  const postsQuery = query(postsCollection(), ...postQueryConstraints(category, condition));
+  const postsQuery = query(postsCollection(), ...postQueryConstraints(category, condition, sortOrder));
   return onSnapshot(
     postsQuery,
     { includeMetadataChanges: true },
@@ -147,10 +159,11 @@ export function subscribeToPosts(
 export async function loadMorePosts(
   category: PostCategory | null,
   condition: DisabilityCategory | null,
+  sortOrder: 'newest' | 'oldest',
   cursor: QueryDocumentSnapshot<DocumentData>,
 ): Promise<{ posts: CommunityPost[]; snapshots: QueryDocumentSnapshot<DocumentData>[] }> {
   requireUid();
-  const constraints = postQueryConstraints(category, condition).filter(
+  const constraints = postQueryConstraints(category, condition, sortOrder).filter(
     (constraint) => constraint.type !== 'limit',
   );
   const pageQuery = query(postsCollection(), ...constraints, startAfter(cursor), limit(30));
@@ -163,6 +176,7 @@ export async function loadMorePosts(
 
 export async function createCommunityPost(input: {
   text: string;
+  image?: { uri: string; width: number; height: number } | null;
   authorName: string;
   isAnonymous: boolean;
   category: PostCategory;
@@ -170,21 +184,71 @@ export async function createCommunityPost(input: {
 }): Promise<void> {
   const uid = requireUid();
   const text = input.text.trim();
-  if (!text || text.length > 500) throw new CommunityServiceError('Posts must be 1–500 characters.');
+  if ((!text && !input.image) || text.length > 500) {
+    throw new CommunityServiceError('Posts need a photo or 1–500 characters of text.');
+  }
   const postRef = doc(postsCollection());
-  await setDoc(postRef, {
-    text,
-    authorId: uid,
-    authorName: input.isAnonymous ? 'Anonymous' : safeFirstName(input.authorName),
-    isAnonymous: input.isAnonymous,
-    category: input.category,
-    conditionCategory: input.conditionCategory ?? 'unknown',
-    createdAt: serverTimestamp(),
-    likeCount: 0,
-    commentCount: 0,
-    reportCount: 0,
-    hidden: false,
-  });
+  let imagePath: string | null = null;
+
+  if (input.image) {
+    const maxDimension = Math.max(input.image.width, input.image.height);
+    const resizeAction =
+      maxDimension > 1280
+        ? input.image.width >= input.image.height
+          ? [{ resize: { width: 1280 } }]
+          : [{ resize: { height: 1280 } }]
+        : [];
+    const image = await manipulateAsync(
+      input.image.uri,
+      resizeAction,
+      { compress: 0.78, format: SaveFormat.JPEG },
+    );
+    const response = await fetch(image.uri);
+    const imageBlob = await response.blob();
+    if (imageBlob.size > 5 * 1024 * 1024) {
+      throw new CommunityServiceError('Please choose an image smaller than 5 MB.');
+    }
+
+    imagePath = `communityPosts/${uid}/${postRef.id}.jpg`;
+    try {
+      await uploadBytes(ref(storage, imagePath), imageBlob, { contentType: 'image/jpeg' });
+    } catch (error) {
+      throw new CommunityServiceError(
+        error instanceof Error ? `Image upload failed: ${error.message}` : 'Image upload failed.',
+      );
+    }
+  }
+
+  try {
+    await setDoc(postRef, {
+      text,
+      ...(imagePath ? { imagePath } : {}),
+      authorId: uid,
+      authorName: input.isAnonymous ? 'Anonymous' : safeFirstName(input.authorName),
+      isAnonymous: input.isAnonymous,
+      category: input.category,
+      conditionCategory: input.conditionCategory ?? 'unknown',
+      createdAt: serverTimestamp(),
+      likeCount: 0,
+      commentCount: 0,
+      reportCount: 0,
+      hidden: false,
+    });
+  } catch (error) {
+    if (imagePath) {
+      try {
+        await deleteObject(ref(storage, imagePath));
+      } catch (cleanupError) {
+        console.warn('[Community] Could not clean up failed post image upload:', cleanupError);
+      }
+    }
+    throw error;
+  }
+}
+
+export async function getCommunityImageUrl(imagePath: string): Promise<string> {
+  requireUid();
+  return getDownloadURL(ref(storage, imagePath));
 }
 
 export async function togglePostLike(postId: string): Promise<boolean> {
@@ -312,8 +376,23 @@ export async function reportPost(postId: string, reason: ReportReason): Promise<
 }
 
 export async function deleteCommunityPost(postId: string): Promise<void> {
-  requireUid();
-  await deleteDoc(postDocument(postId));
+  const uid = requireUid();
+  const postRef = postDocument(postId);
+  const snapshot = await getDoc(postRef);
+  if (!snapshot.exists() || snapshot.data().authorId !== uid) {
+    throw new CommunityServiceError('You can only delete your own post.');
+  }
+  const imagePath = typeof snapshot.data().imagePath === 'string'
+    ? snapshot.data().imagePath
+    : null;
+  await deleteDoc(postRef);
+  if (imagePath) {
+    try {
+      await deleteObject(ref(storage, imagePath));
+    } catch (error) {
+      console.warn('[Community] Could not delete post image from storage:', error);
+    }
+  }
 }
 
 export type FeedCursor = QueryDocumentSnapshot<DocumentData>;
