@@ -28,9 +28,11 @@ export interface MacroResult {
   carbGrams: number;
   fatGrams: number;
   formulaUsed: string;
-  confidence: 'high' | 'general-estimate';
+  confidence: 'high' | 'study-estimate' | 'general-estimate';
   disclaimer: string;
 }
+
+export const PUBMED_STUDY_URL = 'https://pubmed.ncbi.nlm.nih.gov/3999162/';
 
 const ACTIVITY_MULTIPLIER: Record<ActivityLevel, number> = {
   sedentary: 1.2,
@@ -49,19 +51,19 @@ function mifflinStJeor(input: CalculatorInput): number {
 export function calculateCalories(input: CalculatorInput): MacroResult {
   let calories: number;
   let formulaUsed: string;
-  let confidence: 'high' | 'general-estimate';
+  let confidence: 'high' | 'study-estimate' | 'general-estimate';
 
   switch (input.category) {
     case 'Paraplegia':
       calories = input.weightKg * 27.9;
-      formulaUsed = 'Weight(kg) × 27.9 (AND SCI Guideline — Paraplegia)';
-      confidence = 'high';
+      formulaUsed = 'Weight (kg) × 27.9 kcal/kg/day; observed average for paraplegia in Cox et al. (1985, PMID 3999162)';
+      confidence = 'study-estimate';
       break;
 
     case 'Quadriplegia':
       calories = input.weightKg * 22.7;
-      formulaUsed = 'Weight(kg) × 22.7 (AND SCI Guideline — Tetraplegia)';
-      confidence = 'high';
+      formulaUsed = 'Weight (kg) × 22.7 kcal/kg/day; observed average for quadriplegia in Cox et al. (1985, PMID 3999162)';
+      confidence = 'study-estimate';
       break;
 
     case 'Hemiplegia':
@@ -69,7 +71,7 @@ export function calculateCalories(input: CalculatorInput): MacroResult {
     case 'Diplegia': {
       const bmr = mifflinStJeor(input);
       calories = bmr * ACTIVITY_MULTIPLIER[input.activityLevel];
-      formulaUsed = `Mifflin-St Jeor BMR × ${ACTIVITY_MULTIPLIER[input.activityLevel]} activity factor (general estimate — no SCI-specific formula exists for ${input.category})`;
+      formulaUsed = `Mifflin–St Jeor: (10 × weight kg) + (6.25 × height cm) − (5 × age) ${input.gender === 'male' ? '+ 5' : '− 161'}; multiplied by ${ACTIVITY_MULTIPLIER[input.activityLevel]} activity factor. General estimate for ${input.category}.`;
       confidence = 'general-estimate';
       break;
     }

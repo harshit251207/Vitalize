@@ -21,6 +21,12 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { WellnessBanner } from '@/components/WellnessBanner';
 import { fetchUserProfile, updateUserDisplayName } from '@/services/authService';
+import {
+  fetchNutritionProfile,
+  saveNutritionProfile,
+  type NutritionDetails,
+} from '@/services/nutritionProfileService';
+import type { ActivityLevel, Gender } from '@/services/calorieCalculator';
 
 export default function ProfileScreen() {
   const { user, logout } = useAuth();
@@ -34,13 +40,29 @@ export default function ProfileScreen() {
   const [isNameEditorOpen, setIsNameEditorOpen] = useState(false);
   const [isSavingName, setIsSavingName] = useState(false);
   const [nameError, setNameError] = useState('');
+  const [nutritionDetails, setNutritionDetails] = useState<NutritionDetails | null>(null);
+  const [weightDraft, setWeightDraft] = useState('');
+  const [heightDraft, setHeightDraft] = useState('');
+  const [ageDraft, setAgeDraft] = useState('');
+  const [genderDraft, setGenderDraft] = useState<Gender>('male');
+  const [activityDraft, setActivityDraft] = useState<ActivityLevel>('sedentary');
+  const [allergies, setAllergies] = useState('');
+  const [allergiesDraft, setAllergiesDraft] = useState('');
+  const [isNutritionEditorOpen, setIsNutritionEditorOpen] = useState(false);
+  const [isSavingNutrition, setIsSavingNutrition] = useState(false);
+  const [nutritionError, setNutritionError] = useState('');
+  const [nutritionLoadError, setNutritionLoadError] = useState('');
 
   useFocusEffect(
     useCallback(() => {
       if (!user) return;
       let active = true;
       void VitalsService.getUserProfile(user).then((vitalsProfile) => {
-        if (active) setProfile(vitalsProfile);
+        if (!active) return;
+        setProfile(vitalsProfile);
+        if (vitalsProfile.calorieCalculator) {
+          setNutritionDetails((current) => current ?? vitalsProfile.calorieCalculator ?? null);
+        }
       }).catch((error: unknown) => {
         console.error('[Profile] Could not load health profile:', error);
       });
@@ -50,6 +72,15 @@ export default function ProfileScreen() {
         setDisplayName(typeof savedName === 'string' ? savedName.trim() : '');
       }).catch((error: unknown) => {
         console.error('[Profile] Could not load account name:', error);
+      });
+      void fetchNutritionProfile(user).then((savedNutrition) => {
+        if (!active) return;
+        setNutritionLoadError('');
+        if (savedNutrition.details) setNutritionDetails(savedNutrition.details);
+        setAllergies(savedNutrition.previousAllergies);
+      }).catch((error: unknown) => {
+        console.error('[Profile] Could not load nutrition details:', error);
+        if (active) setNutritionLoadError('Could not load saved nutrition details. Reopen Profile to try again.');
       });
       return () => {
         active = false;
@@ -77,6 +108,57 @@ export default function ProfileScreen() {
       setNameError(error instanceof Error ? error.message : 'Could not update your name. Please try again.');
     } finally {
       setIsSavingName(false);
+    }
+  };
+
+  const openNutritionEditor = () => {
+    setWeightDraft(nutritionDetails ? String(nutritionDetails.weightKg) : '');
+    setHeightDraft(nutritionDetails ? String(nutritionDetails.heightCm) : '');
+    setAgeDraft(nutritionDetails ? String(nutritionDetails.age) : '');
+    setGenderDraft(nutritionDetails?.gender ?? 'male');
+    setActivityDraft(nutritionDetails?.activityLevel ?? 'sedentary');
+    setAllergiesDraft(allergies);
+    setNutritionError('');
+    setIsNutritionEditorOpen(true);
+  };
+
+  const saveNutritionDetails = async () => {
+    if (!user) return;
+    const details: NutritionDetails = {
+      weightKg: Number(weightDraft),
+      heightCm: Number(heightDraft),
+      age: Number(ageDraft),
+      gender: genderDraft,
+      activityLevel: activityDraft,
+    };
+    if (
+      !Number.isFinite(details.weightKg) ||
+      details.weightKg < 1 ||
+      details.weightKg > 500 ||
+      !Number.isFinite(details.heightCm) ||
+      details.heightCm < 50 ||
+      details.heightCm > 300 ||
+      !Number.isInteger(details.age) ||
+      details.age < 1 ||
+      details.age > 120
+    ) {
+      setNutritionError('Enter a valid weight (1–500 kg), height (50–300 cm), and age (1–120 years).');
+      return;
+    }
+
+    setIsSavingNutrition(true);
+    setNutritionError('');
+    try {
+      await saveNutritionProfile(user, details, allergiesDraft);
+      setNutritionDetails(details);
+      setAllergies(allergiesDraft.trim().slice(0, 500));
+      setNutritionLoadError('');
+      setIsNutritionEditorOpen(false);
+    } catch (error) {
+      console.error('[Profile] Could not save nutrition details:', error);
+      setNutritionError(error instanceof Error ? error.message : 'Could not save your details. Please try again.');
+    } finally {
+      setIsSavingNutrition(false);
     }
   };
 
@@ -156,34 +238,56 @@ export default function ProfileScreen() {
           <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
         </TouchableOpacity>
 
-        {/* Calorie Calculator Profile Info */}
-        {profile?.calorieCalculator && (
-          <View style={[styles.sectionCard, { backgroundColor: colors.backgroundSelected, borderColor: colors.border }]}>
-            <View style={styles.sectionHeader}>
-              <Ionicons name="flame" size={22} color={colors.primary} style={{ marginRight: 8 }} />
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Nutrition Parameters</Text>
-            </View>
-
-            <View style={styles.rangeRow}>
-              <Text style={[styles.rangeLabel, { color: colors.textSecondary }]}>Weight / Height:</Text>
-              <Text style={[styles.rangeValue, { color: colors.text }]}>
-                {profile.calorieCalculator.weightKg} kg / {profile.calorieCalculator.heightCm} cm
-              </Text>
-            </View>
-            <View style={styles.rangeRow}>
-              <Text style={[styles.rangeLabel, { color: colors.textSecondary }]}>Age & Gender:</Text>
-              <Text style={[styles.rangeValue, { color: colors.text, textTransform: 'capitalize' }]}>
-                {profile.calorieCalculator.age} yrs • {profile.calorieCalculator.gender}
-              </Text>
-            </View>
-            <View style={styles.rangeRow}>
-              <Text style={[styles.rangeLabel, { color: colors.textSecondary }]}>Activity Level:</Text>
-              <Text style={[styles.rangeValue, { color: colors.text, textTransform: 'capitalize' }]}>
-                {profile.calorieCalculator.activityLevel}
-              </Text>
-            </View>
+        <View style={[styles.sectionCard, { backgroundColor: colors.backgroundSelected, borderColor: colors.border }]}>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="nutrition" size={22} color={colors.primary} style={{ marginRight: 8 }} />
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Nutrition details</Text>
           </View>
-        )}
+          {nutritionDetails ? (
+            <>
+              <View style={styles.rangeRow}>
+                <Text style={[styles.rangeLabel, { color: colors.textSecondary }]}>Weight / height:</Text>
+                <Text style={[styles.rangeValue, { color: colors.text }]}>
+                  {nutritionDetails.weightKg} kg / {nutritionDetails.heightCm} cm
+                </Text>
+              </View>
+              <View style={styles.rangeRow}>
+                <Text style={[styles.rangeLabel, { color: colors.textSecondary }]}>Age / gender:</Text>
+                <Text style={[styles.rangeValue, { color: colors.text, textTransform: 'capitalize' }]}>
+                  {nutritionDetails.age} yrs / {nutritionDetails.gender}
+                </Text>
+              </View>
+              <View style={styles.rangeRow}>
+                <Text style={[styles.rangeLabel, { color: colors.textSecondary }]}>Activity:</Text>
+                <Text style={[styles.rangeValue, { color: colors.text, textTransform: 'capitalize' }]}>
+                  {nutritionDetails.activityLevel}
+                </Text>
+              </View>
+            </>
+          ) : (
+            <Text style={[styles.categoryDesc, { color: colors.textSecondary }]}>
+              Add your details to calculate a personalized nutrition estimate in Diet.
+            </Text>
+          )}
+          {!!nutritionLoadError && (
+            <Text style={[styles.nameError, styles.nutritionLoadError, { color: colors.danger }]}>
+              {nutritionLoadError}
+            </Text>
+          )}
+          <Text style={[styles.allergiesLabel, { color: colors.textSecondary }]}>Previous allergies</Text>
+          <Text style={[styles.allergiesValue, { color: allergies ? colors.text : colors.textSecondary }]}>
+            {nutritionLoadError ? 'Unable to load saved allergies' : allergies || 'None added'}
+          </Text>
+          <TouchableOpacity
+            style={[styles.actionButton, styles.nutritionEditButton, { backgroundColor: colors.primary }]}
+            onPress={openNutritionEditor}
+            accessibilityRole="button"
+            accessibilityLabel="Edit nutrition details and allergies"
+          >
+            <Ionicons name="create-outline" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+            <Text style={styles.actionButtonText}>Edit nutrition details</Text>
+          </TouchableOpacity>
+        </View>
 
         {/* Healthy Ranges Info Card */}
         <View style={[styles.sectionCard, { backgroundColor: colors.backgroundSelected, borderColor: colors.border }]}>
@@ -273,6 +377,149 @@ export default function ProfileScreen() {
                   : <Text style={styles.nameSaveText}>Save name</Text>}
               </TouchableOpacity>
             </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal
+        visible={isNutritionEditorOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsNutritionEditorOpen(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalBackdrop}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={[styles.nutritionEditor, { backgroundColor: colors.backgroundElement }]}>
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              <Text style={[styles.nameEditorTitle, { color: colors.text }]}>Nutrition details</Text>
+              <Text style={[styles.nameEditorDescription, { color: colors.textSecondary }]}>
+                Used to estimate your daily calorie needs in the Diet section.
+              </Text>
+              <View style={styles.nutritionInputsRow}>
+                <View style={styles.nutritionInputGroup}>
+                  <Text style={[styles.editorLabel, { color: colors.textSecondary }]}>Weight (kg)</Text>
+                  <TextInput
+                    style={[styles.nameInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
+                    value={weightDraft}
+                    onChangeText={setWeightDraft}
+                    placeholder="e.g. 65"
+                    placeholderTextColor={colors.textSecondary}
+                    keyboardType="decimal-pad"
+                    accessibilityLabel="Weight in kilograms"
+                  />
+                </View>
+                <View style={styles.nutritionInputGroup}>
+                  <Text style={[styles.editorLabel, { color: colors.textSecondary }]}>Height (cm)</Text>
+                  <TextInput
+                    style={[styles.nameInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
+                    value={heightDraft}
+                    onChangeText={setHeightDraft}
+                    placeholder="e.g. 170"
+                    placeholderTextColor={colors.textSecondary}
+                    keyboardType="decimal-pad"
+                    accessibilityLabel="Height in centimeters"
+                  />
+                </View>
+              </View>
+              <Text style={[styles.editorLabel, { color: colors.textSecondary }]}>Age</Text>
+              <TextInput
+                style={[styles.nameInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
+                value={ageDraft}
+                onChangeText={setAgeDraft}
+                placeholder="Age in years"
+                placeholderTextColor={colors.textSecondary}
+                keyboardType="number-pad"
+                accessibilityLabel="Age in years"
+              />
+              <Text style={[styles.editorLabel, { color: colors.textSecondary }]}>Sex used by the calorie equation</Text>
+              <View style={styles.choiceRow}>
+                {(['male', 'female'] as Gender[]).map((option) => (
+                  <TouchableOpacity
+                    key={option}
+                    style={[
+                      styles.choiceButton,
+                      {
+                        borderColor: genderDraft === option ? colors.primary : colors.border,
+                        backgroundColor: genderDraft === option ? colors.primary + '18' : colors.background,
+                      },
+                    ]}
+                    onPress={() => setGenderDraft(option)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: genderDraft === option }}
+                  >
+                    <Text style={[styles.choiceText, { color: genderDraft === option ? colors.primary : colors.text }]}>
+                      {option === 'male' ? 'Male' : 'Female'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Text style={[styles.editorLabel, { color: colors.textSecondary }]}>Activity level</Text>
+              <View style={styles.activityChoices}>
+                {([
+                  ['sedentary', 'Sedentary'],
+                  ['light', 'Light'],
+                  ['moderate', 'Moderate'],
+                ] as const).map(([option, label]) => (
+                  <TouchableOpacity
+                    key={option}
+                    style={[
+                      styles.activityChoice,
+                      {
+                        borderColor: activityDraft === option ? colors.primary : colors.border,
+                        backgroundColor: activityDraft === option ? colors.primary + '18' : colors.background,
+                      },
+                    ]}
+                    onPress={() => setActivityDraft(option)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: activityDraft === option }}
+                  >
+                    <Text style={[styles.choiceText, { color: activityDraft === option ? colors.primary : colors.text }]}>
+                      {label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Text style={[styles.editorLabel, { color: colors.textSecondary }]}>Previous allergies (optional)</Text>
+              <TextInput
+                style={[
+                  styles.nameInput,
+                  styles.allergyInput,
+                  { color: colors.text, borderColor: colors.border, backgroundColor: colors.background },
+                ]}
+                value={allergiesDraft}
+                onChangeText={setAllergiesDraft}
+                placeholder="Add any allergies"
+                placeholderTextColor={colors.textSecondary}
+                multiline
+                maxLength={500}
+                textAlignVertical="top"
+                accessibilityLabel="Previous allergies"
+              />
+              {!!nutritionError && <Text style={[styles.nameError, { color: colors.danger }]}>{nutritionError}</Text>}
+              <View style={styles.nameEditorActions}>
+                <TouchableOpacity
+                  style={[styles.nameCancelButton, { borderColor: colors.border }]}
+                  onPress={() => setIsNutritionEditorOpen(false)}
+                  disabled={isSavingNutrition}
+                  accessibilityRole="button"
+                >
+                  <Text style={[styles.nameCancelText, { color: colors.text }]}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.nameSaveButton, { backgroundColor: colors.primary }]}
+                  onPress={() => void saveNutritionDetails()}
+                  disabled={isSavingNutrition}
+                  accessibilityRole="button"
+                  accessibilityLabel="Save nutrition details"
+                >
+                  {isSavingNutrition
+                    ? <ActivityIndicator color="#FFFFFF" />
+                    : <Text style={styles.nameSaveText}>Save details</Text>}
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -371,6 +618,23 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: 16,
   },
+  allergiesLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 6,
+  },
+  allergiesValue: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 4,
+    marginBottom: 14,
+  },
+  nutritionLoadError: {
+    marginBottom: 4,
+  },
+  nutritionEditButton: {
+    marginTop: 2,
+  },
   actionButton: {
     height: 50,
     borderRadius: 14,
@@ -437,6 +701,11 @@ const styles = StyleSheet.create({
     padding: 20,
     gap: 12,
   },
+  nutritionEditor: {
+    maxHeight: '90%',
+    borderRadius: 22,
+    padding: 20,
+  },
   nameEditorTitle: {
     fontSize: 21,
     lineHeight: 28,
@@ -452,6 +721,53 @@ const styles = StyleSheet.create({
     borderRadius: 13,
     paddingHorizontal: 13,
     fontSize: 16,
+  },
+  nutritionInputsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 16,
+  },
+  nutritionInputGroup: {
+    flex: 1,
+  },
+  editorLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 14,
+    marginBottom: 6,
+  },
+  choiceRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  choiceButton: {
+    minHeight: 42,
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  choiceText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  activityChoices: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  activityChoice: {
+    minHeight: 40,
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  allergyInput: {
+    minHeight: 76,
+    paddingTop: 12,
   },
   nameError: {
     fontSize: 13,

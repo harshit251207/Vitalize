@@ -16,34 +16,13 @@ import {
   MealEntry,
   getTodayDateString,
 } from '@/services/calorieTrackerService';
-import {
-  calculateCalories,
-  DisabilityCategory,
-  DISCLAIMER,
-  MacroResult,
-} from '@/services/calorieCalculator';
-import { VitalsService } from '@/services/vitalsService';
+import { DISCLAIMER, type MacroResult } from '@/services/calorieCalculator';
 import { useRouter } from 'expo-router';
 
 interface DailyCalorieTrackerProps {
   macroResult?: MacroResult | null;
   onOpenCalculator?: () => void;
   compact?: boolean;
-}
-
-function toCalculatorCategory(category?: string): DisabilityCategory | null {
-  if (!category) return null;
-  if (category === 'Quadriplegia/Tetraplegia') return 'Quadriplegia';
-  if (
-    category === 'Hemiplegia' ||
-    category === 'Paraplegia' ||
-    category === 'Quadriplegia' ||
-    category === 'Monoplegia' ||
-    category === 'Diplegia'
-  ) {
-    return category;
-  }
-  return null;
 }
 
 export function DailyCalorieTracker({
@@ -72,42 +51,21 @@ export function DailyCalorieTracker({
     }
 
     try {
-      // Load today's meals
       const todayMeals = await CalorieTrackerService.getMealsForDate(user, todayStr);
       setMeals(todayMeals);
-
-      // If macroResult prop was not provided, load from user profile
-      if (!propMacroResult) {
-        const profile = await VitalsService.getUserProfile(user);
-        const calcCategory = toCalculatorCategory(profile.disabilityCategory);
-        if (profile.calorieCalculator && calcCategory) {
-          const result = calculateCalories({
-            ...profile.calorieCalculator,
-            category: calcCategory,
-          });
-          setComputedTarget(result);
-        } else {
-          setComputedTarget(null);
-        }
-      } else {
-        setComputedTarget(propMacroResult);
-      }
     } catch (err) {
       console.error('Error loading calorie tracker data:', err);
     } finally {
       setLoading(false);
     }
-  }, [user, todayStr, propMacroResult]);
+  }, [user, todayStr]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  // Keep computedTarget in sync if prop changes
   useEffect(() => {
-    if (propMacroResult) {
-      setComputedTarget(propMacroResult);
-    }
+    setComputedTarget(propMacroResult ?? null);
   }, [propMacroResult]);
 
   const handleAddMeal = async () => {
@@ -159,11 +117,11 @@ export function DailyCalorieTracker({
   };
 
   const totalConsumed = CalorieTrackerService.calculateTotalCalories(meals);
-  const targetCalories = computedTarget?.calories || 2000;
+  const targetCalories = computedTarget?.calories ?? 0;
   const hasTarget = Boolean(computedTarget);
   const progressRatio = targetCalories > 0 ? Math.min(totalConsumed / targetCalories, 1) : 0;
   const progressPercent = Math.round(progressRatio * 100);
-  const remaining = targetCalories - totalConsumed;
+  const remaining = hasTarget ? targetCalories - totalConsumed : 0;
 
   if (loading) {
     return (
@@ -197,7 +155,7 @@ export function DailyCalorieTracker({
           >
             <Ionicons name="calculator-outline" size={14} color={colors.primary} style={{ marginRight: 4 }} />
             <Text style={[styles.actionChipText, { color: colors.primary }]}>
-              {hasTarget ? 'Edit Goal' : 'Set Goal'}
+              Edit Profile
             </Text>
           </TouchableOpacity>
         ) : (
@@ -226,7 +184,11 @@ export function DailyCalorieTracker({
             </View>
             <View style={[styles.confidenceBadge, { backgroundColor: computedTarget.confidence === 'high' ? colors.success + '1A' : colors.warning + '1A' }]}>
               <Text style={[styles.confidenceBadgeText, { color: computedTarget.confidence === 'high' ? colors.success : colors.warning }]}>
-                {computedTarget.confidence === 'high' ? 'High Confidence' : 'General Estimate'}
+                {computedTarget.confidence === 'high'
+                  ? 'High Confidence'
+                  : computedTarget.confidence === 'study-estimate'
+                    ? 'Study Estimate'
+                    : 'General Estimate'}
               </Text>
             </View>
           </View>
@@ -255,7 +217,7 @@ export function DailyCalorieTracker({
         >
           <Ionicons name="sparkles" size={18} color={colors.primary} style={{ marginRight: 8 }} />
           <Text style={[styles.noTargetText, { color: colors.primary }]}>
-            Calculate your clinical calorie & macro target in My Plan →
+            {onOpenCalculator ? 'Add your nutrition details in Profile to calculate a target →' : 'Calculate your clinical calorie & macro target in My Plan →'}
           </Text>
         </TouchableOpacity>
       )}
@@ -268,16 +230,18 @@ export function DailyCalorieTracker({
             <Text style={[styles.consumedBigText, { color: colors.text }]}>
               {totalConsumed.toLocaleString()}{' '}
               <Text style={[styles.targetSubText, { color: colors.textSecondary }]}>
-                / {hasTarget ? targetCalories.toLocaleString() : '2,000'} kcal
+                / {hasTarget ? `${targetCalories.toLocaleString()} kcal` : 'No target set'}
               </Text>
             </Text>
           </View>
           <View style={styles.percentageBadge}>
             <Text style={[styles.percentageText, { color: remaining < 0 ? colors.danger : colors.primary }]}>
-              {progressPercent}%
+              {hasTarget ? `${progressPercent}%` : '—'}
             </Text>
             <Text style={[styles.remainingText, { color: colors.textSecondary }]}>
-              {remaining >= 0 ? `${remaining.toLocaleString()} left` : `${Math.abs(remaining).toLocaleString()} over`}
+              {hasTarget
+                ? remaining >= 0 ? `${remaining.toLocaleString()} left` : `${Math.abs(remaining).toLocaleString()} over`
+                : 'Set up Profile'}
             </Text>
           </View>
         </View>
